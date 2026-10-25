@@ -295,6 +295,8 @@ class Repo(
         return epgGate.withPermit {
             val list = try {
                 api.shortEpg(requireAccount(), streamId, 8).filter { it.end > now - 60_000 }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 emptyList()
             }

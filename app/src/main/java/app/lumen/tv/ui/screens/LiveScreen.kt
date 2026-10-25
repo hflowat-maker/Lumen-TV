@@ -43,6 +43,7 @@ import androidx.tv.material3.Icon
 import androidx.tv.material3.LocalContentColor
 import androidx.tv.material3.Text
 import app.lumen.tv.data.Category
+import app.lumen.tv.safely
 import app.lumen.tv.data.Channel
 import app.lumen.tv.data.ContentType
 import app.lumen.tv.data.EpgEntry
@@ -80,7 +81,7 @@ fun LiveScreen(app: AppController) {
     var channels by remember { mutableStateOf<List<Channel>?>(null) }
     var focusedChannel by remember { mutableStateOf<Channel?>(null) }
 
-    LaunchedEffect(version) { categories = app.repo.categories(ContentType.LIVE) }
+    LaunchedEffect(version) { categories = safely("catégories TV") { app.repo.categories(ContentType.LIVE) } ?: emptyList() }
 
     LaunchedEffect(focusedCat) {
         val f = focusedCat ?: return@LaunchedEffect
@@ -90,12 +91,14 @@ fun LiveScreen(app: AppController) {
 
     val favKey = if (selected == FAV) favorites else null
     LaunchedEffect(selected, version, favKey) {
-        channels = when (selected) {
-            FAV -> app.repo.favoriteChannels()
-            RECENT -> app.repo.recentChannels()
-            ALL -> app.repo.allChannels()
-            else -> app.repo.channelsIn(selected)
-        }
+        channels = safely("chaînes $selected") {
+            when (selected) {
+                FAV -> app.repo.favoriteChannels()
+                RECENT -> app.repo.recentChannels()
+                ALL -> app.repo.allChannels()
+                else -> app.repo.channelsIn(selected)
+            }
+        } ?: emptyList()
     }
 
     val pseudo = buildList {

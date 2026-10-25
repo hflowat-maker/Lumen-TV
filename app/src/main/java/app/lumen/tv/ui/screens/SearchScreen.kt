@@ -39,6 +39,7 @@ import androidx.compose.ui.unit.dp
 import androidx.tv.material3.Icon
 import androidx.tv.material3.Text
 import app.lumen.tv.data.Channel
+import app.lumen.tv.safely
 import app.lumen.tv.data.ContentType
 import app.lumen.tv.data.Tile
 import app.lumen.tv.ui.AppController
@@ -75,7 +76,7 @@ fun SearchScreen(app: AppController) {
         }
         searching = true
         delay(260)
-        results = app.repo.search(query.trim())
+        results = safely("recherche") { app.repo.search(query.trim()) } ?: Triple(emptyList(), emptyList(), emptyList())
         searching = false
     }
     LaunchedEffect(Unit) {

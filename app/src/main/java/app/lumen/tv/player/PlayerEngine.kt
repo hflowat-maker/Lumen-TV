@@ -1,6 +1,9 @@
 package app.lumen.tv.player
 
 import android.content.Context
+import android.util.Log
+import app.lumen.tv.CrashReport
+import androidx.media3.datasource.HttpDataSource
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.Format
@@ -18,6 +21,7 @@ import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
 import androidx.media3.extractor.DefaultExtractorsFactory
 import androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory
+import okhttp3.Dispatcher
 import okhttp3.OkHttpClient
 import java.util.Locale
 import java.util.concurrent.TimeUnit
@@ -42,11 +46,22 @@ class PlayerEngine(context: Context, http: OkHttpClient, userAgent: String) {
         val client = http.newBuilder()
             .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(20, TimeUnit.SECONDS)
+            .dispatcher(Dispatcher())
+            .addNetworkInterceptor { chain ->
+                val req = chain.request()
+                val resp = chain.proceed(req)
+                Log.i(
+                    CrashReport.TAG,
+                    "Flux HTTP ${resp.code} ${req.url.host}:${req.url.port} …/${req.url.pathSegments.lastOrNull()} " +
+                        "type=${resp.header("Content-Type")} taille=${resp.header("Content-Length")} range=${req.header("Range")}",
+                )
+                resp
+            }
             .build()
         val dataSource = OkHttpDataSource.Factory(client).setUserAgent(userAgent)
 
         val mediaSources = DefaultMediaSourceFactory(dataSource, extractors)
-            .setLoadErrorHandlingPolicy(DefaultLoadErrorHandlingPolicy(6))
+            .setLoadErrorHandlingPolicy(DefaultLoadErrorHandlingPolicy(3))
 
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(15_000, 60_000, 1_200, 2_500)
@@ -172,6 +187,23 @@ class PlayerEngine(context: Context, http: OkHttpClient, userAgent: String) {
     }
 
     companion object {
+        /** Détail technique affiché sous le message (code d'erreur, code HTTP). */
+        fun technical(e: PlaybackException): String {
+            var cause: Throwable? = e
+            var http: Int? = null
+            while (cause != null && http == null) {
+                http = (cause as? HttpDataSource.InvalidResponseCodeException)?.responseCode
+                cause = cause.cause
+            }
+            val root = generateSequence(e as Throwable) { it.cause }.last()
+            return buildString {
+                append(e.errorCodeName)
+                if (http != null) append(" · HTTP ").append(http)
+                if (root !== e) append(" · ").append(root.javaClass.simpleName)
+                root.message?.take(120)?.let { append(" : ").append(it) }
+            }
+        }
+
         fun describe(e: PlaybackException): String = when (e.errorCode) {
             PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS ->
                 "Le serveur refuse ce flux. Vérifiez qu'aucun autre écran n'utilise votre abonnement."

@@ -30,6 +30,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.Text
 import app.lumen.tv.data.Channel
+import app.lumen.tv.safely
 import app.lumen.tv.data.ContentType
 import app.lumen.tv.data.ProgressKind
 import app.lumen.tv.data.Tile
@@ -104,7 +105,7 @@ private fun BrowseHost(app: AppController, emptyText: String, load: suspend () -
     var rows by remember { mutableStateOf<List<BrowseRow>?>(null) }
 
     LaunchedEffect(version, filterVersion, profile?.id, favorites, progress) {
-        rows = load()
+        rows = safely("rangées") { load() } ?: emptyList()
     }
 
     val r = rows
@@ -174,8 +175,8 @@ fun GridScreen(app: AppController, type: ContentType, categoryId: String, title:
     val gridState = rememberLazyGridState()
 
     LaunchedEffect(type, categoryId) {
-        if (type == ContentType.LIVE) channels = app.repo.channelsIn(categoryId)
-        else tiles = app.repo.tilesIn(type, categoryId)
+        if (type == ContentType.LIVE) channels = safely("grille") { app.repo.channelsIn(categoryId) } ?: emptyList()
+        else tiles = safely("grille") { app.repo.tilesIn(type, categoryId) } ?: emptyList()
     }
 
     Column(Modifier.fillMaxSize()) {

@@ -25,6 +25,7 @@ class LumenApp : Application(), ImageLoaderFactory {
 
     override fun onCreate() {
         super.onCreate()
+        CrashReport.install(this)
         prefs = Prefs(this)
         http = OkHttpClient.Builder()
             .connectTimeout(12, TimeUnit.SECONDS)
@@ -43,6 +44,7 @@ class LumenApp : Application(), ImageLoaderFactory {
         .okHttpClient(
             http.newBuilder()
                 .readTimeout(20, TimeUnit.SECONDS)
+                .dispatcher(Dispatcher().apply { maxRequestsPerHost = 8 })
                 .build()
         )
         .memoryCache { MemoryCache.Builder(this).maxSizePercent(0.22).build() }

@@ -54,7 +54,13 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.Icon
 import androidx.tv.material3.Text
+import app.lumen.tv.CrashReport
 import app.lumen.tv.data.ContentType
+import app.lumen.tv.ui.components.Modal
+import app.lumen.tv.ui.components.PillButton
+import app.lumen.tv.ui.components.safeRequest
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.unit.sp
 import app.lumen.tv.data.PlayRequest
 import app.lumen.tv.data.Prefs
 import app.lumen.tv.data.Repo
@@ -160,6 +166,9 @@ fun AppRoot(app: AppController) {
 
     BackHandler(enabled = app.stack.size > 1) { app.back() }
 
+    val context = LocalContext.current
+    var crash by remember { mutableStateOf(CrashReport.read(context)) }
+
     Box(Modifier.fillMaxSize().background(C.Bg)) {
         holder.SaveableStateProvider(stateKey) {
             when (screen) {
@@ -178,6 +187,36 @@ fun AppRoot(app: AppController) {
             }
         }
     }
+
+    crash?.let { report ->
+        CrashDialog(report) {
+            CrashReport.clear(context)
+            crash = null
+        }
+    }
+}
+
+@Composable
+private fun CrashDialog(report: String, onClose: () -> Unit) {
+    val fr = remember { FocusRequester() }
+    Modal(onClose) {
+        Column(
+            Modifier.width(880.dp).clip(RoundedCornerShape(16.dp)).background(C.Surface1).padding(24.dp)
+        ) {
+            Text("Lumen TV s'est fermé de façon inattendue", style = T.title, color = C.Text1)
+            Spacer(Modifier.height(6.dp))
+            Text("Prenez cet écran en photo et envoyez-la à Claude pour corriger le problème.", style = T.body, color = C.Text2)
+            Spacer(Modifier.height(12.dp))
+            Text(
+                report.lines().filter { it.isNotBlank() }.take(26).joinToString("\n"),
+                style = T.small.copy(fontFamily = FontFamily.Monospace, fontSize = 9.sp, lineHeight = 11.sp),
+                color = C.Text1,
+            )
+            Spacer(Modifier.height(14.dp))
+            PillButton("Fermer", onClick = onClose, modifier = Modifier.focusRequester(fr))
+        }
+    }
+    LaunchedEffect(Unit) { fr.safeRequest(100) }
 }
 
 @Composable

@@ -1,6 +1,7 @@
 package app.lumen.tv.player
 
 import android.os.SystemClock
+import android.util.Log
 import android.view.KeyEvent as AKey
 import android.view.ViewGroup
 import android.widget.Toast
@@ -91,6 +92,7 @@ import androidx.media3.ui.SubtitleView
 import androidx.tv.material3.Icon
 import androidx.tv.material3.LocalContentColor
 import androidx.tv.material3.Text
+import app.lumen.tv.CrashReport
 import app.lumen.tv.LumenApp
 import app.lumen.tv.data.Channel
 import app.lumen.tv.data.ContentType
@@ -144,6 +146,8 @@ fun PlayerScreen(app: AppController, request: PlayRequest) {
     var lastError by remember { mutableStateOf<PlaybackException?>(null) }
     var errorTick by remember { mutableIntStateOf(0) }
     var error by remember { mutableStateOf<String?>(null) }
+    var errorDetail by remember { mutableStateOf<String?>(null) }
+    var slowStart by remember { mutableStateOf(false) }
     var reconnecting by remember { mutableStateOf(false) }
     var retries by remember { mutableIntStateOf(0) }
     var controls by remember { mutableStateOf(false) }
@@ -249,6 +253,7 @@ fun PlayerScreen(app: AppController, request: PlayRequest) {
             }
 
             override fun onPlayerError(e: PlaybackException) {
+                Log.e(CrashReport.TAG, "Erreur de lecture : ${PlayerEngine.technical(e)}", e)
                 lastError = e
                 errorTick++
             }
@@ -319,14 +324,25 @@ fun PlayerScreen(app: AppController, request: PlayRequest) {
             engine.retry()
             return@LaunchedEffect
         }
-        if (retries < 5) {
+        val maxRetries = if (live != null) 5 else 2
+        if (retries < maxRetries) {
             retries++
             reconnecting = true
             delay((1000L shl (retries - 1)).coerceAtMost(8_000L))
             engine.retry()
         } else {
             reconnecting = false
+            errorDetail = PlayerEngine.technical(e)
             error = PlayerEngine.describe(e)
+        }
+    }
+
+    // Démarrage lent : on prévient au lieu de laisser tourner le cercle sans explication.
+    LaunchedEffect(playbackState, reconnecting) {
+        slowStart = false
+        if (playbackState == Player.STATE_BUFFERING || playbackState == Player.STATE_IDLE) {
+            delay(12_000)
+            slowStart = true
         }
     }
 
@@ -559,7 +575,11 @@ fun PlayerScreen(app: AppController, request: PlayRequest) {
                 Spinner(size = 52.dp)
                 if (reconnecting) {
                     Spacer(Modifier.height(14.dp))
-                    Text("Reconnexion…", style = T.label, color = Color.White)
+                    Text("Reconnexion… ($retries)", style = T.label, color = Color.White)
+                } else if (slowStart) {
+                    Spacer(Modifier.height(14.dp))
+                    Text("Le serveur met du temps à répondre…", style = T.label, color = Color.White)
+                    Text("Retour pour annuler", style = T.meta, color = Color(0x99FFFFFF))
                 }
             }
         }
@@ -673,6 +693,10 @@ fun PlayerScreen(app: AppController, request: PlayRequest) {
                     )
                     Spacer(Modifier.height(8.dp))
                     Text(msg, style = T.body, color = Pal.Text2)
+                    errorDetail?.let {
+                        Spacer(Modifier.height(8.dp))
+                        Text(it, style = T.small, color = Pal.Text3, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                    }
                     Spacer(Modifier.height(22.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         PillButton(

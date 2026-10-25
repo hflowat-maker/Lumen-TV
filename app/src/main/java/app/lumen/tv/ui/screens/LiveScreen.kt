@@ -43,6 +43,12 @@ import androidx.tv.material3.Icon
 import androidx.tv.material3.LocalContentColor
 import androidx.tv.material3.Text
 import app.lumen.tv.data.Category
+import app.lumen.tv.data.Group
+import app.lumen.tv.ui.components.Chip
+import app.lumen.tv.ui.components.SectionHeader
+import app.lumen.tv.ui.components.Stage
+import app.lumen.tv.ui.components.rememberStartPivot
+import androidx.compose.foundation.lazy.LazyRow
 import app.lumen.tv.safely
 import app.lumen.tv.data.Channel
 import app.lumen.tv.data.ContentType
@@ -69,122 +75,119 @@ private const val ALL = "__all"
 
 @Composable
 fun LiveScreen(app: AppController) {
+    val repo = app.repo
     val memory = rememberFocusMemory()
     val context = LocalContext.current
-    val version by app.repo.catalogVersion.collectAsState()
-    val favorites by app.repo.favorites.collectAsState()
+    val mode by repo.langMode.collectAsState()
+    val version by repo.catalogVersion.collectAsState()
+    val filterVersion by repo.filterVersion.collectAsState()
+    val favorites by repo.favorites.collectAsState()
     val hasFavs = favorites.any { it.startsWith("live:") }
 
-    var categories by remember { mutableStateOf<List<Category>>(emptyList()) }
+    var groups by remember { mutableStateOf<List<Group>>(emptyList()) }
     var selected by rememberSaveable { mutableStateOf(if (hasFavs) FAV else ALL) }
-    var focusedCat by remember { mutableStateOf<String?>(null) }
+    var focusedChip by remember { mutableStateOf<String?>(null) }
     var channels by remember { mutableStateOf<List<Channel>?>(null) }
     var focusedChannel by remember { mutableStateOf<Channel?>(null) }
 
-    LaunchedEffect(version) { categories = safely("catégories TV") { app.repo.categories(ContentType.LIVE) } ?: emptyList() }
-
-    LaunchedEffect(focusedCat) {
-        val f = focusedCat ?: return@LaunchedEffect
-        delay(260)
-        selected = f
+    LaunchedEffect(mode, version, filterVersion) {
+        groups = safely("thèmes TV") { repo.groups(ContentType.LIVE) } ?: emptyList()
     }
-
+    // Survoler une puce suffit à changer de thème.
+    LaunchedEffect(focusedChip) {
+        val k = focusedChip ?: return@LaunchedEffect
+        delay(350)
+        selected = k
+    }
     val favKey = if (selected == FAV) favorites else null
-    LaunchedEffect(selected, version, favKey) {
+    LaunchedEffect(selected, mode, version, favKey, groups) {
         channels = safely("chaînes $selected") {
             when (selected) {
-                FAV -> app.repo.favoriteChannels()
-                RECENT -> app.repo.recentChannels()
-                ALL -> app.repo.allChannels()
-                else -> app.repo.channelsIn(selected)
+                FAV -> repo.favoriteChannels()
+                RECENT -> repo.recentChannels()
+                ALL -> repo.languageChannels()
+                else -> groups.firstOrNull { it.key == selected }?.let { repo.groupChannels(it) } ?: repo.languageChannels()
             }
         } ?: emptyList()
     }
 
-    val pseudo = buildList {
-        add(Triple(FAV, "Mes chaînes", null))
-        add(Triple(RECENT, "Récentes", null))
-        add(Triple(ALL, "Toutes les chaînes", null))
+    val chips = buildList {
+        if (hasFavs) add(FAV to "Mes chaînes")
+        add(RECENT to "Récentes")
+        add(ALL to "Toutes")
+        groups.forEach { add(it.key to "${it.label}  ${it.count}") }
     }
-    val selectedName = pseudo.firstOrNull { it.first == selected }?.second
-        ?: categories.firstOrNull { it.id == selected }?.name ?: ""
 
-    Row(Modifier.fillMaxSize().padding(top = Safe.v)) {
-        // --- Catégories ---
-        Column(Modifier.width(250.dp).fillMaxHeight().padding(start = 20.dp)) {
-            Text("TV en direct", style = T.display, color = C.Text1, modifier = Modifier.padding(start = 8.dp, bottom = 14.dp))
-            CompositionLocalProvider(LocalBringIntoViewSpec provides rememberCenterPivot()) {
-                LazyColumn(
-                    modifier = Modifier.fillMaxHeight().restoreFocus(),
-                    contentPadding = PaddingValues(bottom = 40.dp),
-                    verticalArrangement = Arrangement.spacedBy(2.dp),
+    Box(Modifier.fillMaxSize()) {
+        Stage(null)
+        Column(Modifier.fillMaxSize()) {
+            SectionHeader("TV en direct", mode, { repo.setLangMode(it) })
+            CompositionLocalProvider(LocalBringIntoViewSpec provides rememberStartPivot(Safe.h)) {
+                LazyRow(
+                    contentPadding = PaddingValues(start = Safe.h, end = Safe.h, top = 14.dp, bottom = 6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    items(pseudo, key = { it.first }) { (id, name, _) ->
-                        CategoryItem(name, null, id == selected, Modifier.remembered(memory, "cat:$id"),
-                            onFocus = { focusedCat = id }, onClick = { selected = id })
-                    }
-                    item(key = "__sep") { Box(Modifier.padding(vertical = 8.dp, horizontal = 8.dp).fillMaxWidth().height(1.dp).background(C.Line)) }
-                    items(categories, key = { it.id }) { cat ->
-                        CategoryItem(cat.name, cat.count, cat.id == selected, Modifier.remembered(memory, "cat:${cat.id}"),
-                            onFocus = { focusedCat = cat.id }, onClick = { selected = cat.id })
+                    items(chips, key = { it.first }) { (k, label) ->
+                        Chip(
+                            text = label,
+                            selected = k == selected,
+                            onClick = { selected = k },
+                            onFocus = { focusedChip = k },
+                            modifier = Modifier
+                                .onFocusChanged { if (!it.isFocused && focusedChip == k) focusedChip = null }
+                                .remembered(memory, "chip/$k"),
+                        )
                     }
                 }
             }
-        }
-
-        // --- Chaînes ---
-        Column(Modifier.weight(1f).fillMaxHeight().padding(horizontal = 16.dp)) {
-            Row(Modifier.padding(start = 8.dp, top = 10.dp, bottom = 14.dp), verticalAlignment = Alignment.Bottom) {
-                Text(selectedName, style = T.title, color = C.Text1, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
-                channels?.let {
-                    Spacer(Modifier.width(10.dp))
-                    Text("${it.size}", style = T.meta, color = C.Text3)
-                }
-            }
+            Row(Modifier.fillMaxSize().padding(top = 8.dp)) {
+                Column(Modifier.weight(1f).fillMaxHeight().padding(start = Safe.h - 8.dp, end = 16.dp)) {
             val list = channels
-            when {
-                list == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Spinner() }
-                list.isEmpty() -> Text(
-                    when (selected) {
-                        FAV -> "Aucune chaîne favorite. Maintenez OK sur une chaîne pour l'ajouter."
-                        RECENT -> "Aucune chaîne regardée récemment."
-                        else -> "Aucune chaîne dans cette catégorie."
-                    },
-                    style = T.body, color = C.Text2, modifier = Modifier.padding(start = 8.dp),
-                )
-                else -> CompositionLocalProvider(LocalBringIntoViewSpec provides rememberCenterPivot()) {
-                    val listState = rememberLazyListState()
-                    var shownFor by rememberSaveable { mutableStateOf(selected) }
-                    LaunchedEffect(selected) {
-                        if (selected != shownFor) {
-                            shownFor = selected
-                            listState.scrollToItem(0)
+                    when {
+                        list == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Spinner() }
+                        list.isEmpty() -> Text(
+                            when (selected) {
+                                FAV -> "Aucune chaîne favorite. Maintenez OK sur une chaîne pour l'ajouter."
+                                RECENT -> "Aucune chaîne regardée récemment."
+                                else -> "Aucune chaîne dans cette catégorie."
+                            },
+                            style = T.body, color = C.Text2, modifier = Modifier.padding(start = 8.dp),
+                        )
+                        else -> CompositionLocalProvider(LocalBringIntoViewSpec provides rememberCenterPivot()) {
+                            val listState = rememberLazyListState()
+                            var shownFor by rememberSaveable { mutableStateOf(selected) }
+                            LaunchedEffect(selected) {
+                                if (selected != shownFor) {
+                                    shownFor = selected
+                                    listState.scrollToItem(0)
+                                }
+                            }
+                            LazyColumn(
+                                state = listState,
+                                modifier = Modifier.fillMaxSize().restoreFocus(),
+                                contentPadding = PaddingValues(top = 4.dp, bottom = 60.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp),
+                            ) {
+                                items(list, key = { it.id }) { ch ->
+                                    ChannelItem(
+                                        app = app,
+                                        channel = ch,
+                                        favorite = "live:${ch.id}" in favorites,
+                                        modifier = Modifier.remembered(memory, "ch:${ch.id}", first = ch == list.first()),
+                                        onFocus = { focusedChannel = ch },
+                                        onClick = { app.playChannel(list, ch) },
+                                        onLongClick = { app.toggleFavorite(context, ContentType.LIVE, ch.id) },
+                                    )
+                                }
+                            }
                         }
                     }
-                    LazyColumn(
-                        state = listState,
-                        modifier = Modifier.fillMaxSize().restoreFocus(),
-                        contentPadding = PaddingValues(top = 4.dp, bottom = 60.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp),
-                    ) {
-                        items(list, key = { it.id }) { ch ->
-                            ChannelItem(
-                                app = app,
-                                channel = ch,
-                                favorite = "live:${ch.id}" in favorites,
-                                modifier = Modifier.remembered(memory, "ch:${ch.id}", first = ch == list.first()),
-                                onFocus = { focusedChannel = ch },
-                                onClick = { app.playChannel(list, ch) },
-                                onLongClick = { app.toggleFavorite(context, ContentType.LIVE, ch.id) },
-                            )
-                        }
-                    }
-                }
-            }
         }
 
-        // --- Aperçu ---
-        ChannelPreview(app, focusedChannel, Modifier.width(330.dp).fillMaxHeight().padding(end = Safe.h, top = 60.dp))
+                }
+                ChannelPreview(app, focusedChannel, Modifier.width(330.dp).fillMaxHeight().padding(end = Safe.h, top = 8.dp))
+            }
+        }
     }
 }
 

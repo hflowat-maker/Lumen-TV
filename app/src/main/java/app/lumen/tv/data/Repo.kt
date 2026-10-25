@@ -189,8 +189,92 @@ class Repo(
 
     suspend fun selectProfile(p: Profile) = withContext(Dispatchers.IO) {
         prefs.activeProfileId = p.id
+        _langMode.value = LangMode.of(prefs.langFor(p.id) ?: if (p.isKid) LangMode.FR.key else LangMode.BOTH.key)
         _profile.value = p
         reloadUserData()
+    }
+
+    // ---------------- Langue et regroupements ----------------
+
+    private val _langMode = MutableStateFlow(LangMode.BOTH)
+    val langMode: StateFlow<LangMode> = _langMode.asStateFlow()
+
+    fun setLangMode(mode: LangMode) {
+        _langMode.value = mode
+        _profile.value?.let { prefs.setLangFor(it.id, mode.key) }
+    }
+
+    suspend fun catInfos(type: ContentType): List<CatInfo> = withContext(Dispatchers.IO) {
+        Classifier.classify(type, db.categories(type, filter))
+    }
+
+    /** Puces (genres / thèmes / langues) non vides pour le type et la langue choisie. */
+    suspend fun groups(type: ContentType, mode: LangMode = _langMode.value): List<Group> = withContext(Dispatchers.IO) {
+        val infos = Classifier.classify(type, db.categories(type, filter))
+        val langIds = infos.filter { mode.accepts(it.lang) }.map { it.id }
+        val f = filter
+        Classifier.groupsFor(type, infos, mode).mapNotNull { g ->
+            val count = if (type == ContentType.LIVE) db.channelCountInCats(g.catIds, f)
+            else db.groupCount(type, g.catIds, f, g.itemGenreKeywords, langIds)
+            if (count > 0) g.copy(count = count) else null
+        }
+    }
+
+    suspend fun groupTiles(type: ContentType, group: Group, limit: Int = 1500): List<Tile> = withContext(Dispatchers.IO) {
+        val mode = _langMode.value
+        val langIds = if (group.itemGenreKeywords.isEmpty()) emptyList()
+        else Classifier.classify(type, db.categories(type, filter)).filter { mode.accepts(it.lang) }.map { it.id }
+        val lim = if (group.key == "new") 300 else limit
+        db.groupTiles(type, group.catIds, filter, lim, group.itemGenreKeywords, langIds)
+    }
+
+    suspend fun groupChannels(group: Group): List<Channel> = withContext(Dispatchers.IO) {
+        db.channelsInCats(group.catIds, filter)
+    }
+
+    /** Toutes les chaînes de la langue choisie. */
+    suspend fun languageChannels(): List<Channel> = withContext(Dispatchers.IO) {
+        val mode = _langMode.value
+        val ids = Classifier.classify(ContentType.LIVE, db.categories(ContentType.LIVE, filter))
+            .filter { mode.accepts(it.lang) }.map { it.id }
+        db.channelsInCats(ids, filter)
+    }
+
+    data class HubData(
+        val resume: WatchProgress?,
+        val newMovie: Tile?,
+        val newSeries: Tile?,
+        val movieCount: Int,
+        val seriesCount: Int,
+        val channel: Channel?,
+        val channelCount: Int,
+        val myList: List<Tile>,
+        val myListCount: Int,
+    )
+
+    suspend fun hubData(): HubData = withContext(Dispatchers.IO) {
+        val mode = _langMode.value
+        val f = filter
+        fun langIds(type: ContentType) = Classifier.classify(type, db.categories(type, f))
+            .filter { mode.accepts(it.lang) }.map { it.id }
+        val movieIds = langIds(ContentType.MOVIE)
+        val seriesIds = langIds(ContentType.SERIES)
+        val liveIds = langIds(ContentType.LIVE)
+        val favChannels = favoriteChannels()
+        val channel = favChannels.firstOrNull() ?: recentChannels().firstOrNull()
+            ?: db.channelsInCats(liveIds, f).firstOrNull()
+        val mine = myList()
+        HubData(
+            resume = continueWatching().firstOrNull(),
+            newMovie = db.groupTiles(ContentType.MOVIE, movieIds, f, 1).firstOrNull(),
+            newSeries = db.groupTiles(ContentType.SERIES, seriesIds, f, 1).firstOrNull(),
+            movieCount = db.groupCount(ContentType.MOVIE, movieIds, f),
+            seriesCount = db.groupCount(ContentType.SERIES, seriesIds, f),
+            channel = channel,
+            channelCount = db.channelCountInCats(liveIds, f),
+            myList = mine.take(1),
+            myListCount = mine.size + favChannels.size,
+        )
     }
 
     suspend fun saveProfile(p: Profile): Long = withContext(Dispatchers.IO) {

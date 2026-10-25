@@ -25,6 +25,9 @@ class Prefs(context: Context) {
             }.apply()
         }
 
+    fun langFor(profileId: Long): String? = sp.getString("lang_$profileId", null)
+    fun setLangFor(profileId: Long, key: String) = sp.edit().putString("lang_$profileId", key).apply()
+
     var activeProfileId: Long
         get() = sp.getLong("profile", -1)
         set(v) = sp.edit().putLong("profile", v).apply()

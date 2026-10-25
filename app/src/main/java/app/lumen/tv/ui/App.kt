@@ -72,18 +72,17 @@ import app.lumen.tv.ui.components.PinDialog
 import app.lumen.tv.ui.components.Safe
 import app.lumen.tv.ui.components.restoreFocusGroup
 import app.lumen.tv.ui.screens.GridScreen
-import app.lumen.tv.ui.screens.HomeScreen
+import app.lumen.tv.ui.screens.HubScreen
+import app.lumen.tv.ui.screens.SectionScreen
 import app.lumen.tv.ui.screens.KidCategoriesScreen
 import app.lumen.tv.ui.screens.LiveScreen
 import app.lumen.tv.ui.screens.LoginScreen
 import app.lumen.tv.ui.screens.MovieDetailScreen
-import app.lumen.tv.ui.screens.MoviesScreen
 import app.lumen.tv.ui.screens.MyListScreen
 import app.lumen.tv.ui.screens.ProfileEditScreen
 import app.lumen.tv.ui.screens.ProfilesScreen
 import app.lumen.tv.ui.screens.SearchScreen
 import app.lumen.tv.ui.screens.SeriesDetailScreen
-import app.lumen.tv.ui.screens.SeriesScreen
 import app.lumen.tv.ui.screens.SettingsScreen
 import app.lumen.tv.ui.screens.SyncScreen
 import app.lumen.tv.ui.theme.C
@@ -95,7 +94,11 @@ sealed interface Screen {
     data object Sync : Screen
     data class Profiles(val manage: Boolean = false) : Screen
     data class ProfileEdit(val id: Long) : Screen
-    data object Main : Screen
+    data object Hub : Screen
+    data class Section(val type: ContentType) : Screen
+    data object Live : Screen
+    data object MyList : Screen
+    data object Search : Screen
     data class Movie(val tile: Tile) : Screen
     data class Series(val tile: Tile) : Screen
     data class Grid(val type: ContentType, val categoryId: String, val title: String) : Screen
@@ -104,19 +107,9 @@ sealed interface Screen {
     data object KidCategories : Screen
 }
 
-enum class Tab(val label: String, val icon: ImageVector) {
-    SEARCH("Recherche", Icons.Filled.Search),
-    HOME("Accueil", Icons.Filled.Home),
-    LIVE("TV en direct", Icons.Filled.LiveTv),
-    MOVIES("Films", Icons.Filled.Movie),
-    SERIES("Séries", Icons.Filled.VideoLibrary),
-    MYLIST("Ma liste", Icons.Filled.FavoriteBorder),
-}
-
 @Stable
 class AppController(val repo: Repo, val prefs: Prefs) {
     val stack = mutableStateListOf<Screen>(Screen.Splash)
-    var tab by mutableStateOf(Tab.HOME)
 
     fun push(s: Screen) {
         stack.add(s)
@@ -143,8 +136,7 @@ class AppController(val repo: Repo, val prefs: Prefs) {
     }
 
     fun goHome() {
-        tab = Tab.HOME
-        reset(Screen.Main)
+        reset(Screen.Hub)
     }
 }
 
@@ -177,7 +169,11 @@ fun AppRoot(app: AppController) {
                 Screen.Sync -> SyncScreen(app)
                 is Screen.Profiles -> ProfilesScreen(app, screen.manage)
                 is Screen.ProfileEdit -> ProfileEditScreen(app, screen.id)
-                Screen.Main -> MainShell(app)
+                Screen.Hub -> HubScreen(app)
+                is Screen.Section -> SectionScreen(app, screen.type)
+                Screen.Live -> LiveScreen(app)
+                Screen.MyList -> MyListScreen(app)
+                Screen.Search -> SearchScreen(app)
                 is Screen.Movie -> MovieDetailScreen(app, screen.tile)
                 is Screen.Series -> SeriesDetailScreen(app, screen.tile)
                 is Screen.Grid -> GridScreen(app, screen.type, screen.categoryId, screen.title)
@@ -238,179 +234,6 @@ private fun Splash(app: AppController) {
                 repo.refreshAccountInBackground()
                 if (repo.catalogIsStale()) repo.syncInBackground()
             }
-        }
-    }
-}
-
-private val RailCollapsed = 72.dp
-private val RailExpanded = 228.dp
-
-@Composable
-fun MainShell(app: AppController) {
-    val profile by app.repo.profile.collectAsState()
-    val context = LocalContext.current
-    val tabHolder = rememberSaveableStateHolder()
-    val railFallback = remember { FocusRequester() }
-    val contentFr = remember { FocusRequester() }
-    var railFocused by remember { mutableStateOf(false) }
-    var lastBack by remember { mutableLongStateOf(0L) }
-    var askPin by remember { mutableStateOf(false) }
-
-    BackHandler {
-        when {
-            !railFocused -> try { railFallback.requestFocus() } catch (_: IllegalStateException) {}
-            app.tab != Tab.HOME -> app.tab = Tab.HOME
-            else -> {
-                val now = System.currentTimeMillis()
-                if (now - lastBack < 2500) {
-                    (context as? Activity)?.finish()
-                } else {
-                    lastBack = now
-                    Toast.makeText(context, "Appuyez à nouveau sur Retour pour quitter", Toast.LENGTH_SHORT).show()
-                }
-            }
-        }
-    }
-
-    fun openSettings() {
-        val pin = app.prefs.parentalPin
-        if (profile?.isKid == true && pin != null) askPin = true else app.push(Screen.Settings)
-    }
-
-    Box(Modifier.fillMaxSize().background(C.Bg)) {
-        Box(
-            Modifier
-                .fillMaxSize()
-                .padding(start = RailCollapsed)
-                .focusRequester(contentFr)
-                .restoreFocusGroup()
-        ) {
-            val tab = app.tab
-            tabHolder.SaveableStateProvider(tab.name) {
-                key(tab) {
-                    when (tab) {
-                        Tab.SEARCH -> SearchScreen(app)
-                        Tab.HOME -> HomeScreen(app)
-                        Tab.LIVE -> LiveScreen(app)
-                        Tab.MOVIES -> MoviesScreen(app)
-                        Tab.SERIES -> SeriesScreen(app)
-                        Tab.MYLIST -> MyListScreen(app)
-                    }
-                }
-            }
-        }
-
-        if (railFocused) {
-            Box(
-                Modifier.fillMaxSize().background(
-                    Brush.horizontalGradient(0f to Color(0xF20A0A0E), 0.35f to Color(0xB30A0A0E), 0.7f to Color.Transparent)
-                )
-            )
-        }
-
-        val width by animateDpAsState(if (railFocused) RailExpanded else RailCollapsed, tween(180), label = "rail")
-        Column(
-            Modifier
-                .fillMaxHeight()
-                .width(width)
-                .padding(vertical = Safe.v, horizontal = 12.dp)
-                .onFocusChanged { railFocused = it.hasFocus }
-                .restoreFocusGroup(railFallback),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            val p = profile
-            if (p != null) {
-                Clickable(
-                    onClick = { app.push(Screen.Profiles()) },
-                    modifier = Modifier.fillMaxWidth().height(48.dp),
-                    shape = RoundedCornerShape(24.dp),
-                    focusedContainer = Color.White,
-                    focusedContentColor = C.Bg,
-                ) {
-                    Row(Modifier.fillMaxSize().padding(horizontal = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Avatar(p.name, p.color, size = 36.dp)
-                        if (railFocused) {
-                            Spacer(Modifier.width(12.dp))
-                            Text(p.name, style = T.label, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        }
-                    }
-                }
-            }
-            Spacer(Modifier.height(18.dp))
-            Tab.entries.forEach { t ->
-                RailItem(
-                    icon = t.icon,
-                    label = t.label,
-                    selected = app.tab == t,
-                    expanded = railFocused,
-                    modifier = if (app.tab == t) Modifier.focusRequester(railFallback) else Modifier,
-                    onClick = {
-                        if (app.tab == t) {
-                            try { contentFr.requestFocus() } catch (_: IllegalStateException) {}
-                        } else {
-                            app.tab = t
-                        }
-                    },
-                )
-            }
-            Spacer(Modifier.weight(1f))
-            RailItem(
-                icon = Icons.Filled.Settings,
-                label = "Réglages",
-                selected = false,
-                expanded = railFocused,
-                onClick = { openSettings() },
-            )
-        }
-    }
-
-    if (askPin) {
-        PinDialog(
-            title = "Code parental",
-            subtitle = "Les réglages sont protégés.",
-            onSubmit = { entered ->
-                val ok = entered == app.prefs.parentalPin
-                if (ok) {
-                    askPin = false
-                    app.push(Screen.Settings)
-                }
-                ok
-            },
-            onDismiss = { askPin = false },
-        )
-    }
-}
-
-@Composable
-private fun RailItem(
-    icon: ImageVector,
-    label: String,
-    selected: Boolean,
-    expanded: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Clickable(
-        onClick = onClick,
-        modifier = modifier.fillMaxWidth().height(44.dp),
-        shape = RoundedCornerShape(22.dp),
-        container = Color.Transparent,
-        focusedContainer = Color.White,
-        contentColor = if (selected) C.Text1 else C.Text2,
-        focusedContentColor = C.Bg,
-    ) {
-        Row(Modifier.fillMaxSize().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(icon, contentDescription = label, modifier = Modifier.size(22.dp))
-            if (expanded) {
-                Spacer(Modifier.width(14.dp))
-                Text(label, style = T.label, maxLines = 1)
-            }
-        }
-        if (selected && !expanded) {
-            Box(
-                Modifier.align(Alignment.BottomCenter).padding(bottom = 3.dp).size(width = 14.dp, height = 3.dp)
-                    .clip(RoundedCornerShape(2.dp)).background(C.Gold)
-            )
         }
     }
 }

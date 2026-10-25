@@ -299,6 +299,71 @@ class Db(context: Context) : SQLiteOpenHelper(context, "lumen.db", null, 1) {
         )
     }
 
+    // ---------------- Requêtes par regroupement (langue / genre) ----------------
+
+    private fun inList(ids: Collection<String>): String =
+        ids.joinToString(",") { "'" + it.replace("'", "''") + "'" }
+
+    /** Clause : dans les catégories du groupe, ou (séries) dans la langue et avec un genre correspondant. */
+    private fun groupWhere(
+        type: ContentType,
+        catIds: Collection<String>,
+        genreLike: List<String>,
+        langCatIds: Collection<String>,
+        f: ContentFilter,
+    ): Pair<String, Array<String>> {
+        val parts = ArrayList<String>()
+        val args = ArrayList<String>()
+        if (catIds.isNotEmpty()) parts += "cat IN (${inList(catIds)})"
+        if (type == ContentType.SERIES && genreLike.isNotEmpty() && langCatIds.isNotEmpty()) {
+            val likes = genreLike.joinToString(" OR ") { "genre LIKE ?" }
+            parts += "(cat IN (${inList(langCatIds)}) AND ($likes))"
+            genreLike.forEach { args += "%$it%" }
+        }
+        if (parts.isEmpty()) parts += "0"
+        return "(${parts.joinToString(" OR ")}) AND ${catClause(type, f)}" to args.toTypedArray()
+    }
+
+    fun groupTiles(
+        type: ContentType,
+        catIds: Collection<String>,
+        f: ContentFilter,
+        limit: Int,
+        genreLike: List<String> = emptyList(),
+        langCatIds: Collection<String> = emptyList(),
+    ): List<Tile> {
+        val (where, args) = groupWhere(type, catIds, genreLike, langCatIds, f)
+        val order = if (type == ContentType.MOVIE) "added DESC" else "modified DESC"
+        return tiles(type, "SELECT ${cols(type)} FROM ${table(type)} WHERE $where ORDER BY $order LIMIT $limit", args)
+    }
+
+    fun groupCount(
+        type: ContentType,
+        catIds: Collection<String>,
+        f: ContentFilter,
+        genreLike: List<String> = emptyList(),
+        langCatIds: Collection<String> = emptyList(),
+    ): Int {
+        val (where, args) = groupWhere(type, catIds, genreLike, langCatIds, f)
+        return readableDatabase.rawQuery("SELECT COUNT(*) FROM ${table(type)} WHERE $where", args).use {
+            if (it.moveToFirst()) it.getInt(0) else 0
+        }
+    }
+
+    fun channelsInCats(catIds: Collection<String>, f: ContentFilter): List<Channel> {
+        if (catIds.isEmpty()) return emptyList()
+        return channels(
+            "SELECT $channelCols FROM live WHERE cat IN (${inList(catIds)}) AND ${catClause(ContentType.LIVE, f)} ORDER BY pos"
+        )
+    }
+
+    fun channelCountInCats(catIds: Collection<String>, f: ContentFilter): Int {
+        if (catIds.isEmpty()) return 0
+        return readableDatabase.rawQuery(
+            "SELECT COUNT(*) FROM live WHERE cat IN (${inList(catIds)}) AND ${catClause(ContentType.LIVE, f)}", null
+        ).use { if (it.moveToFirst()) it.getInt(0) else 0 }
+    }
+
     fun recent(type: ContentType, f: ContentFilter, limit: Int): List<Tile> {
         val order = if (type == ContentType.MOVIE) "added" else "modified"
         return tiles(type, "SELECT ${cols(type)} FROM ${table(type)} WHERE ${catClause(type, f)} ORDER BY $order DESC LIMIT $limit")

@@ -142,7 +142,7 @@ fun LiveScreen(app: AppController) {
             }
             Row(Modifier.fillMaxSize().padding(top = 8.dp)) {
                 Column(Modifier.weight(1f).fillMaxHeight().padding(start = Safe.h - 8.dp, end = 16.dp)) {
-            val list = channels
+                    val list = channels
                     when {
                         list == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Spinner() }
                         list.isEmpty() -> Text(
@@ -182,8 +182,6 @@ fun LiveScreen(app: AppController) {
                             }
                         }
                     }
-        }
-
                 }
                 ChannelPreview(app, focusedChannel, Modifier.width(330.dp).fillMaxHeight().padding(end = Safe.h, top = 8.dp))
             }

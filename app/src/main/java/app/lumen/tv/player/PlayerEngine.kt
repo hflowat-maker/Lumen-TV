@@ -25,6 +25,7 @@ import androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy
 import androidx.media3.extractor.DefaultExtractorsFactory
 import androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory
 import okhttp3.Dispatcher
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
 import java.util.Locale
 import java.util.concurrent.TimeUnit
@@ -39,24 +40,45 @@ private class StreamErrorPolicy : DefaultLoadErrorHandlingPolicy(3) {
 }
 
 /** Lecteur Media3 réglé pour l'IPTV : démarrage rapide, flux TS tolérants, décodage audio logiciel en secours. */
-class PlayerEngine(context: Context, http: OkHttpClient, userAgent: String) {
+class PlayerEngine(
+    context: Context,
+    http: OkHttpClient,
+    userAgent: String,
+    /** Adresse de diffusion annoncée par le serveur (server_info), si différente de l'adresse saisie. */
+    private val alternateBase: String? = null,
+    preferAlternate: Boolean = false,
+) {
 
     val player: ExoPlayer
 
-    // Certains serveurs n'acceptent que des lecteurs connus : en cas de refus (4xx),
-    // on réessaie avec d'autres identités courantes, et on retient celle qui marche.
+    // En cas de refus du serveur (4xx), on réessaie avec d'autres identités de lecteur,
+    // puis avec l'adresse de diffusion annoncée par le serveur, et on retient ce qui marche.
     private val userAgents: List<String> = (listOf(userAgent) + FALLBACK_USER_AGENTS).distinct()
     private var uaIndex = 0
+    private val altUrl = alternateBase?.toHttpUrlOrNull()
+    private val startedOnAlternate = preferAlternate && altUrl != null
+
+    var usingAlternate: Boolean = startedOnAlternate
+        private set
 
     val currentUserAgent: String get() = userAgents[uaIndex]
     val userAgentChanged: Boolean get() = uaIndex > 0
+    val alternateChanged: Boolean get() = usingAlternate != startedOnAlternate
 
-    /** Passe à l'identité suivante ; null quand toutes ont été essayées. */
-    fun nextUserAgent(): String? {
-        if (uaIndex + 1 >= userAgents.size) return null
-        uaIndex++
-        Log.i(CrashReport.TAG, "Essai avec l'identité « ${userAgents[uaIndex]} »")
-        return userAgents[uaIndex]
+    /** Passe à la combinaison suivante (identité, puis adresse) ; null quand tout a été essayé. */
+    fun nextAttempt(): String? {
+        if (uaIndex + 1 < userAgents.size) {
+            uaIndex++
+            Log.i(CrashReport.TAG, "Essai avec l'identité « ${userAgents[uaIndex]} »")
+            return userAgents[uaIndex]
+        }
+        if (altUrl != null && usingAlternate == startedOnAlternate) {
+            usingAlternate = !usingAlternate
+            uaIndex = 0
+            Log.i(CrashReport.TAG, "Essai avec l'adresse ${if (usingAlternate) alternateBase else "d'origine"}")
+            return alternateBase
+        }
+        return null
     }
 
     init {
@@ -77,7 +99,14 @@ class PlayerEngine(context: Context, http: OkHttpClient, userAgent: String) {
             .dispatcher(Dispatcher())
             // Remplace l'identité du lecteur par celle en cours d'essai (voir nextUserAgent).
             .addInterceptor { chain ->
-                chain.proceed(chain.request().newBuilder().header("User-Agent", currentUserAgent).build())
+                var req = chain.request()
+                val alt = altUrl
+                if (usingAlternate && alt != null) {
+                    req = req.newBuilder()
+                        .url(req.url.newBuilder().scheme(alt.scheme).host(alt.host).port(alt.port).build())
+                        .build()
+                }
+                chain.proceed(req.newBuilder().header("User-Agent", currentUserAgent).build())
             }
             .addNetworkInterceptor { chain ->
                 val req = chain.request()

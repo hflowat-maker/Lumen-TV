@@ -67,13 +67,26 @@ class Prefs(context: Context) {
         get() = sp.getInt("acc_max", 0)
         set(v) = sp.edit().putInt("acc_max", v).apply()
 
+    var accountActiveCons: Int
+        get() = sp.getInt("acc_active", 0)
+        set(v) = sp.edit().putInt("acc_active", v).apply()
+
+    /** Adresse de diffusion annoncée par le serveur (peut différer de l'adresse de connexion). */
+    var streamBase: String?
+        get() = sp.getString("stream_base", null)
+        set(v) = sp.edit().putString("stream_base", v).apply()
+
+    var preferStreamBase: Boolean
+        get() = sp.getBoolean("prefer_stream_base", false)
+        set(v) = sp.edit().putBoolean("prefer_stream_base", v).apply()
+
     var accountStatus: String
         get() = sp.getString("acc_status", "") ?: ""
         set(v) = sp.edit().putString("acc_status", v).apply()
 
     fun clearAccount() {
         sp.edit().remove("server").remove("user").remove("pass").remove("last_sync")
-            .remove("acc_exp").remove("acc_max").remove("acc_status").apply()
+            .remove("acc_exp").remove("acc_max").remove("acc_status").remove("acc_active").remove("stream_base").apply()
     }
 
     companion object {

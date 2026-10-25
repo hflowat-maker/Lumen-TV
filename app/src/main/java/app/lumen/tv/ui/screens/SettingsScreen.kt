@@ -112,7 +112,9 @@ fun SettingsScreen(app: AppController) {
                     if (exp > 0) "$status · jusqu'au ${Txt.date(exp)}" else "$status · sans date de fin",
                 ) {}
             )
-            if (prefs.accountMaxCons > 0) add(SettingItem.Row("cons", "Écrans simultanés", "${prefs.accountMaxCons}") {})
+            if (prefs.accountMaxCons > 0) {
+                add(SettingItem.Row("cons", "Écrans utilisés", "${prefs.accountActiveCons} sur ${prefs.accountMaxCons}") {})
+            }
             add(SettingItem.Row("logout", "Changer de compte", danger = true) { confirmLogout = true })
 
             add(SettingItem.Header("Catalogue"))

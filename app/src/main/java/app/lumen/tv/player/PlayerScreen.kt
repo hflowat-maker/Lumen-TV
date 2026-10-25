@@ -129,7 +129,12 @@ fun PlayerScreen(app: AppController, request: PlayRequest) {
     val context = LocalContext.current
     val repo = app.repo
     val prefs = app.prefs
-    val engine = remember { PlayerEngine(context, (context.applicationContext as LumenApp).http, prefs.userAgent) }
+    val engine = remember {
+        PlayerEngine(
+            context, (context.applicationContext as LumenApp).http, prefs.userAgent,
+            alternateBase = repo.alternateStreamBase(), preferAlternate = prefs.preferStreamBase,
+        )
+    }
     val player = engine.player
 
     val live = request as? PlayRequest.Live
@@ -246,6 +251,10 @@ fun PlayerScreen(app: AppController, request: PlayRequest) {
                         Log.i(CrashReport.TAG, "Identité retenue : ${engine.currentUserAgent}")
                         prefs.userAgent = engine.currentUserAgent
                     }
+                    if (engine.alternateChanged) {
+                        Log.i(CrashReport.TAG, "Adresse de diffusion retenue : alternative=${engine.usingAlternate}")
+                        prefs.preferStreamBase = engine.usingAlternate
+                    }
                 }
             }
 
@@ -332,13 +341,30 @@ fun PlayerScreen(app: AppController, request: PlayRequest) {
         // Refus explicite du serveur : on essaie une autre identité de lecteur avant d'abandonner.
         val code = PlayerEngine.httpCode(e)
         if (code != null && code in 400..499 && code != 404) {
-            if (engine.nextUserAgent() != null) {
+            if (engine.nextAttempt() != null) {
                 reconnecting = true
                 engine.retry()
             } else {
                 reconnecting = false
-                errorDetail = PlayerEngine.technical(e)
+                val technical = PlayerEngine.technical(e)
+                errorDetail = technical
                 error = PlayerEngine.describe(e)
+                // Vérifie l'état de l'abonnement pour expliquer le refus.
+                val info = repo.refreshAccountInfo()
+                if (info != null) {
+                    val cons = "connexions ${info.activeConnections}/${info.maxConnections}"
+                    Log.w(CrashReport.TAG, "Refus du serveur ($code) — compte ${info.status}, $cons")
+                    errorDetail = "$technical · $cons"
+                    if (info.maxConnections > 0 && info.activeConnections >= info.maxConnections) {
+                        error = "Votre abonnement est déjà utilisé sur un autre appareil " +
+                            "(${info.activeConnections}/${info.maxConnections} écran${if (info.maxConnections > 1) "s" else ""}). " +
+                            "Fermez la lecture sur l'autre appareil puis réessayez."
+                    } else {
+                        error = "Votre fournisseur refuse la lecture des vidéos pour cet abonnement (code $code), " +
+                            "alors que la connexion au compte fonctionne. Vérifiez auprès de lui que l'abonnement " +
+                            "autorise la lecture sur cet appareil et cette connexion internet."
+                    }
+                }
             }
             return@LaunchedEffect
         }

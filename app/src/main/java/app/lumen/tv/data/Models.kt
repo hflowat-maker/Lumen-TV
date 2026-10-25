@@ -21,6 +21,8 @@ data class AccountInfo(
     val activeConnections: Int,
     val isTrial: Boolean,
     val formats: List<String>,
+    /** Adresse de diffusion annoncée par le serveur (server_info), si différente. */
+    val streamBase: String? = null,
 )
 
 @Immutable

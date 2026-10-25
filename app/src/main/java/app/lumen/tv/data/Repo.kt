@@ -84,7 +84,14 @@ class Repo(
     private fun storeAccountInfo(info: AccountInfo) {
         prefs.accountExp = info.expDate ?: 0
         prefs.accountMaxCons = info.maxConnections
+        prefs.accountActiveCons = info.activeConnections
         prefs.accountStatus = info.status
+        prefs.streamBase = info.streamBase
+        android.util.Log.i(
+            app.lumen.tv.CrashReport.TAG,
+            "Compte : ${info.status}, connexions ${info.activeConnections}/${info.maxConnections}, " +
+                "essai=${info.isTrial}, formats=${info.formats}, diffusion=${info.streamBase}",
+        )
         // Certains fournisseurs n'autorisent que le HLS : on s'adapte automatiquement.
         val formats = info.formats.map { it.lowercase() }
         if (formats.isNotEmpty() && "ts" !in formats && "m3u8" in formats) prefs.liveFormat = "m3u8"
@@ -306,6 +313,17 @@ class Repo(
     }
 
     // ---------------- Lecture ----------------
+
+    /** Adresse de diffusion de secours (server_info) quand elle diffère de l'adresse saisie. */
+    fun alternateStreamBase(): String? {
+        val alt = prefs.streamBase ?: return null
+        val main = prefs.account?.server ?: return null
+        val a = android.net.Uri.parse(alt)
+        val m = android.net.Uri.parse(main)
+        val ap = if (a.port > 0) a.port else if (a.scheme == "https") 443 else 80
+        val mp = if (m.port > 0) m.port else if (m.scheme == "https") 443 else 80
+        return if (a.host.equals(m.host, ignoreCase = true) && ap == mp && a.scheme == m.scheme) null else alt
+    }
 
     fun liveUrl(id: Int): String = api.liveUrl(requireAccount(), id, prefs.liveFormat)
     fun movieUrl(id: Int, ext: String): String = api.movieUrl(requireAccount(), id, ext)

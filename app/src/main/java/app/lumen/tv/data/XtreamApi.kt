@@ -120,6 +120,10 @@ class XtreamApi(private val http: OkHttpClient) {
         var trial = false
         var formats = emptyList<String>()
         var message: String? = null
+        var siUrl: String? = null
+        var siPort: String? = null
+        var siHttpsPort: String? = null
+        var siProto: String? = null
         if (r.peek() != JsonToken.BEGIN_OBJECT) throw XtreamException("Identifiants refusés")
         r.obj { name ->
             when (name) {
@@ -136,6 +140,15 @@ class XtreamApi(private val http: OkHttpClient) {
                         else -> r.skipValue()
                     }
                 }
+                "server_info" -> r.obj { n ->
+                    when (n) {
+                        "url" -> siUrl = r.str().orNullIfBlank()
+                        "port" -> siPort = r.str().orNullIfBlank()
+                        "https_port" -> siHttpsPort = r.str().orNullIfBlank()
+                        "server_protocol" -> siProto = r.str().orNullIfBlank()
+                        else -> r.skipValue()
+                    }
+                }
                 else -> r.skipValue()
             }
         }
@@ -143,7 +156,13 @@ class XtreamApi(private val http: OkHttpClient) {
         if (status.isNotBlank() && !status.equals("Active", ignoreCase = true)) {
             throw XtreamException("Abonnement inactif ($status)")
         }
-        AccountInfo(status.ifBlank { "Active" }, exp, max, active, trial, formats)
+        val streamBase = siUrl?.let { host ->
+            val proto = if (siProto.equals("https", ignoreCase = true)) "https" else "http"
+            val port = (if (proto == "https") siHttpsPort else siPort)?.takeIf { it != "0" }
+            val h = host.removePrefix("http://").removePrefix("https://").trimEnd('/')
+            "$proto://$h" + (port?.let { ":$it" } ?: "")
+        }
+        AccountInfo(status.ifBlank { "Active" }, exp, max, active, trial, formats, streamBase)
     }
 
     suspend fun categories(acc: Account, type: ContentType): List<Category> {

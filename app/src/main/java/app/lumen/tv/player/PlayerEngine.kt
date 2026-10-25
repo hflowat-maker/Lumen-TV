@@ -82,6 +82,13 @@ class PlayerEngine(
         return null
     }
 
+    /** Revient à l'adresse et à l'identité d'origine. */
+    fun resetAttempts() {
+        usingAlternate = false
+        startedOnAlternate = false
+        uaIndex = 0
+    }
+
     /** Bascule sur une adresse de diffusion trouvée automatiquement. */
     fun useBase(base: String) {
         altBase = base

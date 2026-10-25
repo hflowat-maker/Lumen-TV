@@ -342,6 +342,66 @@ class Repo(
      * Le serveur refuse les vidéos sur l'adresse saisie : on cherche, en parallèle, un port
      * courant des serveurs Xtream qui accepte le compte puis la vidéo demandée.
      */
+    data class StreamFix(val base: String? = null, val url: String? = null)
+
+    /** Cherche une façon de lire le flux refusé : autre port, puis autre forme d'adresse. */
+    suspend fun findStreamFix(failingUrl: String, userAgent: String): StreamFix? {
+        findStreamBase(failingUrl, userAgent)?.let { return StreamFix(base = it) }
+        return findUrlVariant(failingUrl, userAgent)?.let { StreamFix(url = it) }
+    }
+
+    private suspend fun probeCode(url: String, userAgent: String): Int = withContext(Dispatchers.IO) {
+        val probe = http.newBuilder()
+            .connectTimeout(4, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(6, java.util.concurrent.TimeUnit.SECONDS)
+            .callTimeout(9, java.util.concurrent.TimeUnit.SECONDS)
+            .build()
+        runCatching {
+            probe.newCall(
+                okhttp3.Request.Builder().url(url).header("User-Agent", userAgent).header("Range", "bytes=0-1023").build()
+            ).execute().use { it.code }
+        }.getOrDefault(-1)
+    }
+
+    /** Teste d'autres formes d'adresse (HLS, forme courte, autre extension) sur le même serveur. */
+    private suspend fun findUrlVariant(failingUrl: String, userAgent: String): String? {
+        val uri = android.net.Uri.parse(failingUrl)
+        val seg = uri.encodedPath?.trim('/')?.split('/') ?: return null
+        if (seg.size != 4) return null
+        val (kind, u, p, file) = seg
+        val id = file.substringBefore('.')
+        val ext = file.substringAfter('.', "")
+        val base = "${uri.scheme}://${uri.encodedAuthority}"
+        val variants: List<Pair<String, String>> = when (kind) {
+            "live" -> listOf(
+                "hls" to "$base/live/$u/$p/$id.m3u8",
+                "short" to "$base/$u/$p/$id",
+                "shortts" to "$base/$u/$p/$id.ts",
+                "noext" to "$base/live/$u/$p/$id",
+            )
+            "movie", "series" -> buildList {
+                add("noext" to "$base/$kind/$u/$p/$id")
+                if (ext != "mp4") add("mp4" to "$base/$kind/$u/$p/$id.mp4")
+                if (ext != "mkv") add("mkv" to "$base/$kind/$u/$p/$id.mkv")
+            }
+            else -> emptyList()
+        }
+        for ((style, url) in variants) {
+            val code = probeCode(url, userAgent)
+            android.util.Log.i(app.lumen.tv.CrashReport.TAG, "Variante $kind/$style : HTTP $code")
+            if (code in 200..399) {
+                when {
+                    kind == "live" && style == "hls" -> prefs.liveFormat = "m3u8"
+                    kind == "live" -> prefs.liveUrlStyle = style
+                    style == "noext" -> prefs.vodUrlStyle = "noext"
+                }
+                android.util.Log.i(app.lumen.tv.CrashReport.TAG, "Forme d'adresse retenue : $kind/$style")
+                return url
+            }
+        }
+        return null
+    }
+
     suspend fun findStreamBase(failingUrl: String, userAgent: String): String? = withContext(Dispatchers.IO) {
         val acc = prefs.account ?: return@withContext null
         val original = android.net.Uri.parse(failingUrl)
@@ -393,9 +453,27 @@ class Repo(
         found
     }
 
-    fun liveUrl(id: Int): String = api.liveUrl(requireAccount(), id, prefs.liveFormat)
-    fun movieUrl(id: Int, ext: String): String = api.movieUrl(requireAccount(), id, ext)
-    fun episodeUrl(id: String, ext: String): String = api.episodeUrl(requireAccount(), id, ext)
+    private fun enc(v: String) = java.net.URLEncoder.encode(v, "UTF-8")
+
+    fun liveUrl(id: Int): String {
+        val acc = requireAccount()
+        return when (prefs.liveUrlStyle) {
+            "short" -> "${acc.server}/${enc(acc.username)}/${enc(acc.password)}/$id"
+            "shortts" -> "${acc.server}/${enc(acc.username)}/${enc(acc.password)}/$id.ts"
+            "noext" -> "${acc.server}/live/${enc(acc.username)}/${enc(acc.password)}/$id"
+            else -> api.liveUrl(acc, id, prefs.liveFormat)
+        }
+    }
+
+    fun movieUrl(id: Int, ext: String): String {
+        val url = api.movieUrl(requireAccount(), id, ext)
+        return if (prefs.vodUrlStyle == "noext") url.substringBeforeLast('.') else url
+    }
+
+    fun episodeUrl(id: String, ext: String): String {
+        val url = api.episodeUrl(requireAccount(), id, ext)
+        return if (prefs.vodUrlStyle == "noext") url.substringBeforeLast('.') else url
+    }
 
     fun isFavorite(type: ContentType, id: Int): Boolean = "${type.key}:$id" in _favorites.value
 

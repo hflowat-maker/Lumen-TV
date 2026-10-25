@@ -81,6 +81,16 @@ class Prefs(context: Context) {
         get() = sp.getString("found_stream_base", null)
         set(v) = sp.edit().putString("found_stream_base", v).apply()
 
+    /** Forme des adresses de chaînes acceptée par le serveur : standard, short, shortts. */
+    var liveUrlStyle: String
+        get() = sp.getString("live_style", "standard") ?: "standard"
+        set(v) = sp.edit().putString("live_style", v).apply()
+
+    /** Forme des adresses de films/épisodes : standard, noext, mp4. */
+    var vodUrlStyle: String
+        get() = sp.getString("vod_style", "standard") ?: "standard"
+        set(v) = sp.edit().putString("vod_style", v).apply()
+
     var preferStreamBase: Boolean
         get() = sp.getBoolean("prefer_stream_base", false)
         set(v) = sp.edit().putBoolean("prefer_stream_base", v).apply()
@@ -92,7 +102,8 @@ class Prefs(context: Context) {
     fun clearAccount() {
         sp.edit().remove("server").remove("user").remove("pass").remove("last_sync")
             .remove("acc_exp").remove("acc_max").remove("acc_status").remove("acc_active").remove("stream_base")
-            .remove("found_stream_base").remove("prefer_stream_base").apply()
+            .remove("found_stream_base").remove("prefer_stream_base")
+            .remove("live_style").remove("vod_style").apply()
     }
 
     companion object {

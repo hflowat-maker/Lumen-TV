@@ -351,15 +351,24 @@ fun PlayerScreen(app: AppController, request: PlayRequest) {
                 portProbed = true
                 reconnecting = true
                 probing = true
-                val base = repo.findStreamBase(engine.currentUrl!!, prefs.userAgent)
+                val fix = repo.findStreamFix(engine.currentUrl!!, prefs.userAgent)
                 probing = false
-                if (base != null) {
-                    engine.useBase(base)
-                    retries = 0
-                    engine.retry()
-                } else {
-                    lastError = e
-                    errorTick++
+                when {
+                    fix?.base != null -> {
+                        engine.useBase(fix.base)
+                        retries = 0
+                        engine.retry()
+                    }
+                    fix?.url != null -> {
+                        engine.resetAttempts()
+                        retries = 0
+                        if (live != null) engine.playLive(fix.url, fix.url.contains(".m3u8"))
+                        else engine.playVod(fix.url, player.currentPosition)
+                    }
+                    else -> {
+                        lastError = e
+                        errorTick++
+                    }
                 }
             } else {
                 reconnecting = false

@@ -155,6 +155,8 @@ fun PlayerScreen(app: AppController, request: PlayRequest) {
     var errorDetail by remember { mutableStateOf<String?>(null) }
     var slowStart by remember { mutableStateOf(false) }
     var reconnecting by remember { mutableStateOf(false) }
+    var portProbed by remember { mutableStateOf(false) }
+    var probing by remember { mutableStateOf(false) }
     var retries by remember { mutableIntStateOf(0) }
     var controls by remember { mutableStateOf(false) }
     var banner by remember { mutableStateOf(false) }
@@ -344,6 +346,21 @@ fun PlayerScreen(app: AppController, request: PlayRequest) {
             if (engine.nextAttempt() != null) {
                 reconnecting = true
                 engine.retry()
+            } else if (!portProbed && engine.currentUrl != null) {
+                // Dernier recours : chercher le port qui accepte les vidéos (comme dans IBO Player).
+                portProbed = true
+                reconnecting = true
+                probing = true
+                val base = repo.findStreamBase(engine.currentUrl!!, prefs.userAgent)
+                probing = false
+                if (base != null) {
+                    engine.useBase(base)
+                    retries = 0
+                    engine.retry()
+                } else {
+                    lastError = e
+                    errorTick++
+                }
             } else {
                 reconnecting = false
                 val technical = PlayerEngine.technical(e)
@@ -627,7 +644,10 @@ fun PlayerScreen(app: AppController, request: PlayRequest) {
         if (showSpinner) {
             Column(Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
                 Spinner(size = 52.dp)
-                if (reconnecting) {
+                if (probing) {
+                    Spacer(Modifier.height(14.dp))
+                    Text("Recherche de l'adresse vidéo du serveur…", style = T.label, color = Color.White)
+                } else if (reconnecting) {
                     Spacer(Modifier.height(14.dp))
                     Text("Reconnexion… ($retries)", style = T.label, color = Color.White)
                 } else if (slowStart) {

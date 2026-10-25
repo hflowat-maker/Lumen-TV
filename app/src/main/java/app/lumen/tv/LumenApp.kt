@@ -37,7 +37,39 @@ class LumenApp : Application(), ImageLoaderFactory {
                 chain.proceed(chain.request().newBuilder().header("User-Agent", prefs.userAgent).build())
             }
             .build()
-        repo = Repo(prefs, XtreamApi(http), Db(this))
+        repo = Repo(prefs, XtreamApi(http), Db(this), http)
+        applyConfigFile()
+    }
+
+    /**
+     * Réglage à distance par ADB : un fichier lumen-config.txt déposé dans le dossier de l'app
+     * (seuls l'app et ADB peuvent y écrire) permet de corriger l'adresse du serveur.
+     * Ligne attendue : server=http://hote:port
+     */
+    private fun applyConfigFile() {
+        val dir = getExternalFilesDir(null) ?: return
+        val file = java.io.File(dir, "lumen-config.txt")
+        if (!file.exists()) return
+        try {
+            val values = file.readLines().mapNotNull { line ->
+                val i = line.indexOf('=')
+                if (i <= 0) null else line.substring(0, i).trim().lowercase() to line.substring(i + 1).trim()
+            }.toMap()
+            val server = values["server"]?.trimEnd('/')
+            val acc = prefs.account
+            if (!server.isNullOrBlank() && acc != null) {
+                val normalized = if (server.startsWith("http", ignoreCase = true)) server else "http://$server"
+                prefs.account = acc.copy(server = normalized)
+                prefs.streamBase = null
+                prefs.discoveredStreamBase = null
+                prefs.preferStreamBase = false
+                android.util.Log.i(CrashReport.TAG, "Adresse du serveur modifiée par ADB : $normalized")
+            }
+        } catch (e: Exception) {
+            android.util.Log.e(CrashReport.TAG, "Fichier de réglage illisible", e)
+        } finally {
+            file.delete()
+        }
     }
 
     override fun newImageLoader(): ImageLoader = ImageLoader.Builder(this)

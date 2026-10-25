@@ -5,6 +5,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -32,6 +33,7 @@ class Repo(
     private val prefs: Prefs,
     private val api: XtreamApi,
     private val db: Db,
+    private val http: okhttp3.OkHttpClient,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -319,15 +321,76 @@ class Repo(
 
     // ---------------- Lecture ----------------
 
+    private val AUTH_OK = Regex("\"auth\"\\s*:\\s*\"?1")
+
     /** Adresse de diffusion de secours (server_info) quand elle diffère de l'adresse saisie. */
     fun alternateStreamBase(): String? {
-        val alt = prefs.streamBase ?: return null
         val main = prefs.account?.server ?: return null
-        val a = android.net.Uri.parse(alt)
-        val m = android.net.Uri.parse(main)
+        val alt = prefs.discoveredStreamBase ?: prefs.streamBase ?: return null
+        return if (sameOrigin(alt, main)) null else alt
+    }
+
+    private fun sameOrigin(x: String, y: String): Boolean {
+        val a = android.net.Uri.parse(x)
+        val m = android.net.Uri.parse(y)
         val ap = if (a.port > 0) a.port else if (a.scheme == "https") 443 else 80
         val mp = if (m.port > 0) m.port else if (m.scheme == "https") 443 else 80
-        return if (a.host.equals(m.host, ignoreCase = true) && ap == mp && a.scheme == m.scheme) null else alt
+        return a.host.equals(m.host, ignoreCase = true) && ap == mp && a.scheme == m.scheme
+    }
+
+    /**
+     * Le serveur refuse les vidéos sur l'adresse saisie : on cherche, en parallèle, un port
+     * courant des serveurs Xtream qui accepte le compte puis la vidéo demandée.
+     */
+    suspend fun findStreamBase(failingUrl: String, userAgent: String): String? = withContext(Dispatchers.IO) {
+        val acc = prefs.account ?: return@withContext null
+        val original = android.net.Uri.parse(failingUrl)
+        val host = original.host ?: return@withContext null
+        val currentPort = if (original.port > 0) original.port else 80
+        val ports = listOf(8080, 25461, 8000, 8880, 2052, 2082, 2086, 2095, 8888, 8081, 8090, 7070, 8789, 80)
+            .filter { it != currentPort }
+        val probe = http.newBuilder()
+            .connectTimeout(4, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(6, java.util.concurrent.TimeUnit.SECONDS)
+            .callTimeout(9, java.util.concurrent.TimeUnit.SECONDS)
+            .build()
+        fun enc(v: String) = java.net.URLEncoder.encode(v, "UTF-8")
+        val path = original.encodedPath ?: return@withContext null
+        val found = coroutineScope {
+            ports.map { port ->
+                async {
+                    val base = "http://$host:$port"
+                    val apiOk = runCatching {
+                        probe.newCall(
+                            okhttp3.Request.Builder()
+                                .url("$base/player_api.php?username=${enc(acc.username)}&password=${enc(acc.password)}")
+                                .header("User-Agent", userAgent)
+                                .build()
+                        ).execute().use { r -> r.isSuccessful && AUTH_OK.containsMatchIn(r.body?.string().orEmpty()) }
+                    }.getOrDefault(false)
+                    if (!apiOk) return@async null
+                    val code = runCatching {
+                        probe.newCall(
+                            okhttp3.Request.Builder()
+                                .url("$base$path")
+                                .header("User-Agent", userAgent)
+                                .header("Range", "bytes=0-1023")
+                                .build()
+                        ).execute().use { r -> r.code }
+                    }.getOrDefault(-1)
+                    android.util.Log.i(app.lumen.tv.CrashReport.TAG, "Test du port $port : compte OK, vidéo HTTP $code")
+                    if (code in 200..399) base else null
+                }
+            }.awaitAll().firstOrNull { it != null }
+        }
+        if (found != null) {
+            android.util.Log.i(app.lumen.tv.CrashReport.TAG, "Adresse de diffusion trouvée : $found")
+            prefs.discoveredStreamBase = found
+            prefs.preferStreamBase = true
+        } else {
+            android.util.Log.w(app.lumen.tv.CrashReport.TAG, "Aucun port courant n'accepte les vidéos sur $host")
+        }
+        found
     }
 
     fun liveUrl(id: Int): String = api.liveUrl(requireAccount(), id, prefs.liveFormat)

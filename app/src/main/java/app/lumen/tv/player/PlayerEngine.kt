@@ -55,8 +55,9 @@ class PlayerEngine(
     // puis avec l'adresse de diffusion annoncée par le serveur, et on retient ce qui marche.
     private val userAgents: List<String> = (listOf(userAgent) + FALLBACK_USER_AGENTS).distinct()
     private var uaIndex = 0
-    private val altUrl = alternateBase?.toHttpUrlOrNull()
-    private val startedOnAlternate = preferAlternate && altUrl != null
+    private var altUrl = alternateBase?.toHttpUrlOrNull()
+    private var altBase = alternateBase
+    private var startedOnAlternate = preferAlternate && altUrl != null
 
     var usingAlternate: Boolean = startedOnAlternate
         private set
@@ -75,10 +76,20 @@ class PlayerEngine(
         if (altUrl != null && usingAlternate == startedOnAlternate) {
             usingAlternate = !usingAlternate
             uaIndex = 0
-            Log.i(CrashReport.TAG, "Essai avec l'adresse ${if (usingAlternate) alternateBase else "d'origine"}")
-            return alternateBase
+            Log.i(CrashReport.TAG, "Essai avec l'adresse ${if (usingAlternate) altBase else "d'origine"}")
+            return altBase
         }
         return null
+    }
+
+    /** Bascule sur une adresse de diffusion trouvée automatiquement. */
+    fun useBase(base: String) {
+        altBase = base
+        altUrl = base.toHttpUrlOrNull()
+        usingAlternate = altUrl != null
+        startedOnAlternate = usingAlternate
+        uaIndex = 0
+        Log.i(CrashReport.TAG, "Lecture via $base")
     }
 
     init {

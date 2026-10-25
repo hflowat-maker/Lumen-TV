@@ -76,6 +76,11 @@ class Prefs(context: Context) {
         get() = sp.getString("stream_base", null)
         set(v) = sp.edit().putString("stream_base", v).apply()
 
+    /** Adresse de diffusion trouvée automatiquement (port qui accepte les vidéos). */
+    var discoveredStreamBase: String?
+        get() = sp.getString("found_stream_base", null)
+        set(v) = sp.edit().putString("found_stream_base", v).apply()
+
     var preferStreamBase: Boolean
         get() = sp.getBoolean("prefer_stream_base", false)
         set(v) = sp.edit().putBoolean("prefer_stream_base", v).apply()
@@ -86,7 +91,8 @@ class Prefs(context: Context) {
 
     fun clearAccount() {
         sp.edit().remove("server").remove("user").remove("pass").remove("last_sync")
-            .remove("acc_exp").remove("acc_max").remove("acc_status").remove("acc_active").remove("stream_base").apply()
+            .remove("acc_exp").remove("acc_max").remove("acc_status").remove("acc_active").remove("stream_base")
+            .remove("found_stream_base").remove("prefer_stream_base").apply()
     }
 
     companion object {

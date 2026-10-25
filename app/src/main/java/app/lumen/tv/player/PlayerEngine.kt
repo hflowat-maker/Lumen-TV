@@ -21,6 +21,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
+import androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy
 import androidx.media3.extractor.DefaultExtractorsFactory
 import androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory
 import okhttp3.Dispatcher
@@ -28,10 +29,35 @@ import okhttp3.OkHttpClient
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 
+/** Pas de nouvelle tentative inutile quand le serveur refuse explicitement (4xx). */
+private class StreamErrorPolicy : DefaultLoadErrorHandlingPolicy(3) {
+    override fun getRetryDelayMsFor(info: LoadErrorHandlingPolicy.LoadErrorInfo): Long {
+        val e = info.exception
+        if (e is HttpDataSource.InvalidResponseCodeException && e.responseCode in 400..499) return C.TIME_UNSET
+        return super.getRetryDelayMsFor(info)
+    }
+}
+
 /** Lecteur Media3 réglé pour l'IPTV : démarrage rapide, flux TS tolérants, décodage audio logiciel en secours. */
 class PlayerEngine(context: Context, http: OkHttpClient, userAgent: String) {
 
     val player: ExoPlayer
+
+    // Certains serveurs n'acceptent que des lecteurs connus : en cas de refus (4xx),
+    // on réessaie avec d'autres identités courantes, et on retient celle qui marche.
+    private val userAgents: List<String> = (listOf(userAgent) + FALLBACK_USER_AGENTS).distinct()
+    private var uaIndex = 0
+
+    val currentUserAgent: String get() = userAgents[uaIndex]
+    val userAgentChanged: Boolean get() = uaIndex > 0
+
+    /** Passe à l'identité suivante ; null quand toutes ont été essayées. */
+    fun nextUserAgent(): String? {
+        if (uaIndex + 1 >= userAgents.size) return null
+        uaIndex++
+        Log.i(CrashReport.TAG, "Essai avec l'identité « ${userAgents[uaIndex]} »")
+        return userAgents[uaIndex]
+    }
 
     init {
         val renderers = DefaultRenderersFactory(context)
@@ -49,13 +75,21 @@ class PlayerEngine(context: Context, http: OkHttpClient, userAgent: String) {
             .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(20, TimeUnit.SECONDS)
             .dispatcher(Dispatcher())
+            // Remplace l'identité du lecteur par celle en cours d'essai (voir nextUserAgent).
+            .addInterceptor { chain ->
+                chain.proceed(chain.request().newBuilder().header("User-Agent", currentUserAgent).build())
+            }
             .addNetworkInterceptor { chain ->
                 val req = chain.request()
                 val resp = chain.proceed(req)
+                val body = if (!resp.isSuccessful) {
+                    runCatching { cleanBody(resp.peekBody(600).string()) }.getOrNull()
+                } else null
                 Log.i(
                     CrashReport.TAG,
                     "Flux HTTP ${resp.code} ${req.url.host}:${req.url.port} …/${req.url.pathSegments.lastOrNull()} " +
-                        "type=${resp.header("Content-Type")} taille=${resp.header("Content-Length")} range=${req.header("Range")}",
+                        "type=${resp.header("Content-Type")} taille=${resp.header("Content-Length")} " +
+                        "ua=\"${req.header("User-Agent")}\"" + (body?.let { " réponse=\"$it\"" } ?: ""),
                 )
                 resp
             }
@@ -63,7 +97,7 @@ class PlayerEngine(context: Context, http: OkHttpClient, userAgent: String) {
         val dataSource = OkHttpDataSource.Factory(client).setUserAgent(userAgent)
 
         val mediaSources = DefaultMediaSourceFactory(dataSource, extractors)
-            .setLoadErrorHandlingPolicy(DefaultLoadErrorHandlingPolicy(3))
+            .setLoadErrorHandlingPolicy(StreamErrorPolicy())
 
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(15_000, 60_000, 1_200, 2_500)
@@ -218,17 +252,49 @@ class PlayerEngine(context: Context, http: OkHttpClient, userAgent: String) {
                 cause = cause.cause
             }
             val root = generateSequence(e as Throwable) { it.cause }.last()
+            val body = generateSequence(e as Throwable) { it.cause }
+                .firstNotNullOfOrNull { it as? HttpDataSource.InvalidResponseCodeException }
+                ?.responseBody?.let { cleanBody(String(it, Charsets.UTF_8)) }
             return buildString {
                 append(e.errorCodeName)
                 if (http != null) append(" · HTTP ").append(http)
-                if (root !== e) append(" · ").append(root.javaClass.simpleName)
-                root.message?.take(120)?.let { append(" : ").append(it) }
+                if (!body.isNullOrBlank()) {
+                    append(" · serveur : « ").append(body.take(140)).append(" »")
+                } else {
+                    if (root !== e) append(" · ").append(root.javaClass.simpleName)
+                    root.message?.take(120)?.let { append(" : ").append(it) }
+                }
             }
         }
 
+        /** Code HTTP renvoyé par le serveur, s'il y en a un. */
+        fun httpCode(e: PlaybackException): Int? = generateSequence(e as Throwable) { it.cause }
+            .firstNotNullOfOrNull { (it as? HttpDataSource.InvalidResponseCodeException)?.responseCode }
+
+        internal fun cleanBody(raw: String): String = raw
+            .replace(Regex("(?is)<(script|style)[^>]*>.*?</\\1>"), " ")
+            .replace(Regex("<[^>]+>"), " ")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+            .take(200)
+
+        val FALLBACK_USER_AGENTS = listOf(
+            "IPTVSmartersPro",
+            "VLC/3.0.21 LibVLC/3.0.21",
+            "TiviMate/5.1.6 (Android 14)",
+            "okhttp/4.12.0",
+            System.getProperty("http.agent") ?: "Dalvik/2.1.0 (Linux; U; Android 14)",
+            "Lavf/60.16.100",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36",
+        )
+
         fun describe(e: PlaybackException): String = when (e.errorCode) {
-            PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS ->
-                "Le serveur refuse ce flux. Vérifiez qu'aucun autre écran n'utilise votre abonnement."
+            PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS -> when (httpCode(e)) {
+                401, 403, 456, 458 -> "Le serveur refuse la lecture de ce flux (même avec plusieurs identités de lecteur). " +
+                    "Votre abonnement limite peut-être le nombre d'écrans ou les applications autorisées."
+                404 -> "Ce contenu n'existe plus chez votre fournisseur."
+                else -> "Le serveur refuse ce flux. Vérifiez qu'aucun autre écran n'utilise votre abonnement."
+            }
             PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED,
             PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT ->
                 "Connexion au serveur impossible. Vérifiez la connexion internet de la TV."

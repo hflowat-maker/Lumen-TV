@@ -242,6 +242,10 @@ fun PlayerScreen(app: AppController, request: PlayRequest) {
                     retries = 0
                     reconnecting = false
                     error = null
+                    if (engine.userAgentChanged && prefs.userAgent != engine.currentUserAgent) {
+                        Log.i(CrashReport.TAG, "Identité retenue : ${engine.currentUserAgent}")
+                        prefs.userAgent = engine.currentUserAgent
+                    }
                 }
             }
 
@@ -323,6 +327,19 @@ fun PlayerScreen(app: AppController, request: PlayRequest) {
         if (e.errorCode == PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW) {
             player.seekToDefaultPosition()
             engine.retry()
+            return@LaunchedEffect
+        }
+        // Refus explicite du serveur : on essaie une autre identité de lecteur avant d'abandonner.
+        val code = PlayerEngine.httpCode(e)
+        if (code != null && code in 400..499 && code != 404) {
+            if (engine.nextUserAgent() != null) {
+                reconnecting = true
+                engine.retry()
+            } else {
+                reconnecting = false
+                errorDetail = PlayerEngine.technical(e)
+                error = PlayerEngine.describe(e)
+            }
             return@LaunchedEffect
         }
         val maxRetries = if (live != null) 5 else 2

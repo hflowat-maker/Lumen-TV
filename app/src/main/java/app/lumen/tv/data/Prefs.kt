@@ -91,6 +91,11 @@ class Prefs(context: Context) {
         get() = sp.getString("vod_style", "standard") ?: "standard"
         set(v) = sp.edit().putString("vod_style", v).apply()
 
+    /** Pile réseau vidéo qui fonctionne avec ce serveur (voir PlayerEngine.STACKS). */
+    var httpStack: String
+        get() = sp.getString("http_stack", "java") ?: "java"
+        set(v) = sp.edit().putString("http_stack", v).apply()
+
     var preferStreamBase: Boolean
         get() = sp.getBoolean("prefer_stream_base", false)
         set(v) = sp.edit().putBoolean("prefer_stream_base", v).apply()
@@ -103,7 +108,7 @@ class Prefs(context: Context) {
         sp.edit().remove("server").remove("user").remove("pass").remove("last_sync")
             .remove("acc_exp").remove("acc_max").remove("acc_status").remove("acc_active").remove("stream_base")
             .remove("found_stream_base").remove("prefer_stream_base")
-            .remove("live_style").remove("vod_style").apply()
+            .remove("live_style").remove("vod_style").remove("http_stack").apply()
     }
 
     companion object {

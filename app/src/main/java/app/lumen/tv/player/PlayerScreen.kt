@@ -133,6 +133,7 @@ fun PlayerScreen(app: AppController, request: PlayRequest) {
         PlayerEngine(
             context, (context.applicationContext as LumenApp).http, prefs.userAgent,
             alternateBase = repo.alternateStreamBase(), preferAlternate = prefs.preferStreamBase,
+            initialStack = prefs.httpStack,
         )
     }
     val player = engine.player
@@ -351,9 +352,15 @@ fun PlayerScreen(app: AppController, request: PlayRequest) {
                 portProbed = true
                 reconnecting = true
                 probing = true
-                val fix = repo.findStreamFix(engine.currentUrl!!, prefs.userAgent)
+                val fix = repo.findStreamFix(engine.currentUrl!!, prefs.userAgent, engine.stack)
                 probing = false
                 when {
+                    fix?.stack != null -> {
+                        engine.resetAttempts()
+                        engine.useStack(fix.stack)
+                        retries = 0
+                        engine.retry()
+                    }
                     fix?.base != null -> {
                         engine.useBase(fix.base)
                         retries = 0

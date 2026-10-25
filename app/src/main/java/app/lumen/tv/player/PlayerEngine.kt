@@ -15,6 +15,9 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
 import androidx.media3.datasource.okhttp.OkHttpDataSource
+import androidx.media3.datasource.DataSource
+import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.datasource.ResolvingDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
@@ -29,6 +32,15 @@ import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
 import java.util.Locale
 import java.util.concurrent.TimeUnit
+
+/** Résolution DNS qui privilégie l'IPv4 (certains serveurs refusent les vidéos en IPv6). */
+object Ipv4FirstDns : okhttp3.Dns {
+    override fun lookup(hostname: String): List<java.net.InetAddress> {
+        val all = okhttp3.Dns.SYSTEM.lookup(hostname)
+        val v4 = all.filterIsInstance<java.net.Inet4Address>()
+        return v4.ifEmpty { all }
+    }
+}
 
 /** Pas de nouvelle tentative inutile quand le serveur refuse explicitement (4xx). */
 private class StreamErrorPolicy : DefaultLoadErrorHandlingPolicy(3) {
@@ -47,9 +59,20 @@ class PlayerEngine(
     /** Adresse de diffusion annoncée par le serveur (server_info), si différente de l'adresse saisie. */
     private val alternateBase: String? = null,
     preferAlternate: Boolean = false,
+    initialStack: String = STACK_JAVA,
 ) {
 
     val player: ExoPlayer
+
+    /** Pile réseau utilisée pour les vidéos (voir STACKS). Modifiable en cours de route. */
+    var stack: String = if (initialStack in STACKS) initialStack else STACK_JAVA
+        private set
+
+    fun useStack(s: String) {
+        stack = s
+        uaIndex = 0
+        Log.i(CrashReport.TAG, "Pile réseau vidéo : $s")
+    }
 
     // En cas de refus du serveur (4xx), on réessaie avec d'autres identités de lecteur,
     // puis avec l'adresse de diffusion annoncée par le serveur, et on retient ce qui marche.
@@ -111,37 +134,79 @@ class PlayerEngine(
             )
             .setConstantBitrateSeekingEnabled(true)
 
-        val client = http.newBuilder()
-            .connectTimeout(10, TimeUnit.SECONDS)
-            .readTimeout(20, TimeUnit.SECONDS)
-            .dispatcher(Dispatcher())
-            // Remplace l'identité du lecteur par celle en cours d'essai (voir nextUserAgent).
-            .addInterceptor { chain ->
-                var req = chain.request()
-                val alt = altUrl
-                if (usingAlternate && alt != null) {
-                    req = req.newBuilder()
-                        .url(req.url.newBuilder().scheme(alt.scheme).host(alt.host).port(alt.port).build())
-                        .build()
+        fun logInterceptor() = okhttp3.Interceptor { chain ->
+            val req = chain.request()
+            val resp = chain.proceed(req)
+            val body = if (!resp.isSuccessful) {
+                runCatching { cleanBody(resp.peekBody(600).string()) }.getOrNull()
+            } else null
+            Log.i(
+                CrashReport.TAG,
+                "Flux HTTP ${resp.code} ${req.url.host}:${req.url.port} …/${req.url.pathSegments.lastOrNull()} " +
+                    "type=${resp.header("Content-Type")} pile=$stack " +
+                    "ua=\"${req.header("User-Agent")}\"" + (body?.let { " réponse=\"$it\"" } ?: ""),
+            )
+            resp
+        }
+
+        fun okClient(plain: Boolean, ipv4: Boolean): OkHttpClient {
+            val b = http.newBuilder()
+                .connectTimeout(10, TimeUnit.SECONDS)
+                .readTimeout(20, TimeUnit.SECONDS)
+                .dispatcher(Dispatcher())
+                .addInterceptor { chain ->
+                    // L'identité choisie remplace celle posée par le client principal.
+                    chain.proceed(chain.request().newBuilder().header("User-Agent", currentUserAgent).build())
                 }
-                chain.proceed(req.newBuilder().header("User-Agent", currentUserAgent).build())
+                .addNetworkInterceptor(logInterceptor())
+            if (plain) {
+                b.addInterceptor { chain ->
+                    chain.proceed(
+                        chain.request().newBuilder()
+                            .header("Accept", "*/*")
+                            .header("Accept-Encoding", "identity")
+                            .build()
+                    )
+                }
             }
-            .addNetworkInterceptor { chain ->
-                val req = chain.request()
-                val resp = chain.proceed(req)
-                val body = if (!resp.isSuccessful) {
-                    runCatching { cleanBody(resp.peekBody(600).string()) }.getOrNull()
-                } else null
-                Log.i(
-                    CrashReport.TAG,
-                    "Flux HTTP ${resp.code} ${req.url.host}:${req.url.port} …/${req.url.pathSegments.lastOrNull()} " +
-                        "type=${resp.header("Content-Type")} taille=${resp.header("Content-Length")} " +
-                        "ua=\"${req.header("User-Agent")}\"" + (body?.let { " réponse=\"$it\"" } ?: ""),
-                )
-                resp
+            if (ipv4) b.dns(Ipv4FirstDns)
+            return b.build()
+        }
+
+        val okDefault by lazy { OkHttpDataSource.Factory(okClient(plain = false, ipv4 = false)) }
+        val okPlain by lazy { OkHttpDataSource.Factory(okClient(plain = true, ipv4 = false)) }
+        val okIpv4 by lazy { OkHttpDataSource.Factory(okClient(plain = true, ipv4 = true)) }
+        // Pile Java standard (HttpURLConnection), la même que la plupart des lecteurs IPTV.
+        val java = DefaultHttpDataSource.Factory()
+            .setUserAgent(null)
+            .setConnectTimeoutMs(10_000)
+            .setReadTimeoutMs(20_000)
+            .setAllowCrossProtocolRedirects(true)
+
+        val upstream = DataSource.Factory {
+            when (stack) {
+                STACK_OKHTTP -> okDefault
+                STACK_OKHTTP_PLAIN -> okPlain
+                STACK_OKHTTP_IPV4 -> okIpv4
+                else -> java
+            }.createDataSource()
+        }
+
+        // Réécrit chaque demande : adresse de diffusion de secours et identité en cours d'essai.
+        val dataSource = ResolvingDataSource.Factory(upstream) { spec ->
+            var uri = spec.uri
+            val alt = altUrl
+            if (usingAlternate && alt != null && uri.scheme?.startsWith("http") == true) {
+                uri = uri.buildUpon()
+                    .scheme(alt.scheme)
+                    .encodedAuthority(if (alt.port == okhttp3.HttpUrl.defaultPort(alt.scheme)) alt.host else "${alt.host}:${alt.port}")
+                    .build()
             }
-            .build()
-        val dataSource = OkHttpDataSource.Factory(client).setUserAgent(userAgent)
+            if (stack == STACK_JAVA) {
+                Log.i(CrashReport.TAG, "Demande vidéo ${uri.host}:${uri.port} …/${uri.lastPathSegment} pile=java ua=\"$currentUserAgent\"")
+            }
+            spec.withUri(uri).withAdditionalHeaders(mapOf("User-Agent" to currentUserAgent))
+        }
 
         val mediaSources = DefaultMediaSourceFactory(dataSource, extractors)
             .setLoadErrorHandlingPolicy(StreamErrorPolicy())
@@ -324,6 +389,12 @@ class PlayerEngine(
             .replace(Regex("\\s+"), " ")
             .trim()
             .take(200)
+
+        const val STACK_JAVA = "java"
+        const val STACK_OKHTTP_PLAIN = "okhttp-plain"
+        const val STACK_OKHTTP_IPV4 = "okhttp-ipv4"
+        const val STACK_OKHTTP = "okhttp"
+        val STACKS = listOf(STACK_JAVA, STACK_OKHTTP_PLAIN, STACK_OKHTTP_IPV4, STACK_OKHTTP)
 
         val FALLBACK_USER_AGENTS = listOf(
             "IPTVSmartersPro",

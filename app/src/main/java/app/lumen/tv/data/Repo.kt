@@ -342,12 +342,59 @@ class Repo(
      * Le serveur refuse les vidéos sur l'adresse saisie : on cherche, en parallèle, un port
      * courant des serveurs Xtream qui accepte le compte puis la vidéo demandée.
      */
-    data class StreamFix(val base: String? = null, val url: String? = null)
+    data class StreamFix(val base: String? = null, val url: String? = null, val stack: String? = null)
 
-    /** Cherche une façon de lire le flux refusé : autre port, puis autre forme d'adresse. */
-    suspend fun findStreamFix(failingUrl: String, userAgent: String): StreamFix? {
+    /** Cherche une façon de lire le flux refusé : autre pile réseau, autre port, autre forme d'adresse. */
+    suspend fun findStreamFix(failingUrl: String, userAgent: String, currentStack: String): StreamFix? {
+        findStack(failingUrl, userAgent, currentStack)?.let { return StreamFix(stack = it) }
         findStreamBase(failingUrl, userAgent)?.let { return StreamFix(base = it) }
         return findUrlVariant(failingUrl, userAgent)?.let { StreamFix(url = it) }
+    }
+
+    /** Compare la même demande faite de plusieurs façons (Java, OkHttp, IPv4) et garde celle qui passe. */
+    private suspend fun findStack(url: String, userAgent: String, currentStack: String): String? = withContext(Dispatchers.IO) {
+        val host = android.net.Uri.parse(url).host
+        runCatching {
+            val addrs = java.net.InetAddress.getAllByName(host).joinToString { it.hostAddress ?: "?" }
+            android.util.Log.i(app.lumen.tv.CrashReport.TAG, "DNS $host : $addrs")
+        }
+        fun javaCode(): Int = runCatching {
+            val c = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+            c.connectTimeout = 5000
+            c.readTimeout = 7000
+            c.instanceFollowRedirects = true
+            c.setRequestProperty("User-Agent", userAgent)
+            c.setRequestProperty("Accept-Encoding", "identity")
+            c.setRequestProperty("Range", "bytes=0-1023")
+            try { c.responseCode } finally { c.disconnect() }
+        }.getOrDefault(-1)
+        fun okCode(plain: Boolean, ipv4: Boolean): Int = runCatching {
+            val b = http.newBuilder()
+                .connectTimeout(5, java.util.concurrent.TimeUnit.SECONDS)
+                .readTimeout(7, java.util.concurrent.TimeUnit.SECONDS)
+                .callTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
+            if (ipv4) b.dns(app.lumen.tv.player.Ipv4FirstDns)
+            val rb = okhttp3.Request.Builder().url(url).header("User-Agent", userAgent).header("Range", "bytes=0-1023")
+            if (plain) rb.header("Accept", "*/*").header("Accept-Encoding", "identity")
+            b.build().newCall(rb.build()).execute().use { it.code }
+        }.getOrDefault(-1)
+        val tests = linkedMapOf(
+            app.lumen.tv.player.PlayerEngine.STACK_JAVA to { javaCode() },
+            app.lumen.tv.player.PlayerEngine.STACK_OKHTTP_PLAIN to { okCode(plain = true, ipv4 = false) },
+            app.lumen.tv.player.PlayerEngine.STACK_OKHTTP_IPV4 to { okCode(plain = true, ipv4 = true) },
+            app.lumen.tv.player.PlayerEngine.STACK_OKHTTP to { okCode(plain = false, ipv4 = false) },
+        )
+        var winner: String? = null
+        for ((name, test) in tests) {
+            val code = test()
+            android.util.Log.i(app.lumen.tv.CrashReport.TAG, "Test pile $name : HTTP $code")
+            if (winner == null && code in 200..399) winner = name
+        }
+        if (winner != null && winner != currentStack) {
+            prefs.httpStack = winner
+            android.util.Log.i(app.lumen.tv.CrashReport.TAG, "Pile réseau retenue : $winner")
+            winner
+        } else null
     }
 
     private suspend fun probeCode(url: String, userAgent: String): Int = withContext(Dispatchers.IO) {

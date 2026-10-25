@@ -1,7 +1,9 @@
 package app.lumen.tv.player
 
 import android.content.Context
+import android.net.Uri
 import android.util.Log
+import androidx.media3.exoplayer.util.EventLogger
 import app.lumen.tv.CrashReport
 import androidx.media3.datasource.HttpDataSource
 import androidx.media3.common.AudioAttributes
@@ -88,9 +90,22 @@ class PlayerEngine(context: Context, http: OkHttpClient, userAgent: String) {
             .setPreferredAudioLanguages("fr")
             .build()
         player.playWhenReady = true
+        // Journal détaillé du lecteur (chargements, erreurs, pistes) pour le diagnostic.
+        player.addAnalyticsListener(EventLogger("LumenPlayer"))
+    }
+
+    /** Adresse en cours de lecture (pour l'ouverture dans un lecteur externe). */
+    var currentUrl: String? = null
+        private set
+
+    private fun logStart(kind: String, url: String) {
+        val u = Uri.parse(url)
+        Log.i(CrashReport.TAG, "Lecture $kind : ${u.scheme}://${u.host}:${u.port} …/${u.lastPathSegment}")
     }
 
     fun playLive(url: String, hls: Boolean) {
+        currentUrl = url
+        logStart(if (hls) "direct HLS" else "direct TS", url)
         val item = MediaItem.Builder()
             .setUri(url)
             .setMimeType(if (hls) MimeTypes.APPLICATION_M3U8 else MimeTypes.VIDEO_MP2T)
@@ -101,6 +116,8 @@ class PlayerEngine(context: Context, http: OkHttpClient, userAgent: String) {
     }
 
     fun playVod(url: String, startMs: Long) {
+        currentUrl = url
+        logStart("VOD", url)
         val item = MediaItem.Builder().setUri(url).build()
         player.setMediaItem(item, startMs.coerceAtLeast(0))
         player.prepare()
@@ -108,8 +125,13 @@ class PlayerEngine(context: Context, http: OkHttpClient, userAgent: String) {
     }
 
     fun retry() {
+        Log.i(CrashReport.TAG, "Nouvelle tentative de lecture")
         player.prepare()
         player.play()
+    }
+
+    fun stop() {
+        player.stop()
     }
 
     fun release() {

@@ -36,7 +36,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.focus.focusRestorer
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
@@ -131,13 +131,18 @@ fun rememberCenterPivot(): BringIntoViewSpec = remember {
 
 // ---------------- Restauration du focus ----------------
 
-/** Pour LazyRow / LazyColumn : revient sur le dernier élément focalisé de la liste. */
-fun Modifier.restoreFocus(): Modifier = this.focusRestorer()
+// Modifier.focusRestorer() de Compose 1.7 « épingle » l'élément focalisé d'une liste et
+// le libère deux fois quand la liste change : plantage « Release should only be called once »
+// constaté sur TV. On ne l'utilise donc plus ; le retour sur l'élément précédent est géré
+// par FocusMemory (remembered) et la navigation géométrique du système de focus.
 
-/** Pour un conteneur classique (Row / Column). */
+/** Listes paresseuses : navigation de focus par défaut (sans épinglage). */
+fun Modifier.restoreFocus(): Modifier = this
+
+/** Conteneur classique : groupe de focus, entrée forcée sur [fallback] s'il est fourni. */
 fun Modifier.restoreFocusGroup(fallback: FocusRequester? = null): Modifier =
-    if (fallback == null) this.focusRestorer().focusGroup()
-    else this.focusRestorer { fallback }.focusGroup()
+    if (fallback == null) this.focusGroup()
+    else this.focusProperties { enter = { fallback } }.focusGroup()
 
 // ---------------- Mémoire de focus (retour arrière) ----------------
 

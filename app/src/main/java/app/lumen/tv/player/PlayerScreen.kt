@@ -40,6 +40,7 @@ import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.FormatListBulleted
+import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
@@ -338,11 +339,21 @@ fun PlayerScreen(app: AppController, request: PlayRequest) {
     }
 
     // Démarrage lent : on prévient au lieu de laisser tourner le cercle sans explication.
-    LaunchedEffect(playbackState, reconnecting) {
+    LaunchedEffect(playbackState, reconnecting, error) {
         slowStart = false
-        if (playbackState == Player.STATE_BUFFERING || playbackState == Player.STATE_IDLE) {
+        if (error == null && (playbackState == Player.STATE_BUFFERING || playbackState == Player.STATE_IDLE)) {
             delay(12_000)
             slowStart = true
+            // Chien de garde : sans image au bout de 35 s, on arrête et on explique.
+            val stuckAt = player.currentPosition
+            delay(23_000)
+            if (error == null && player.playbackState != Player.STATE_READY && player.currentPosition == stuckAt) {
+                Log.w(CrashReport.TAG, "Délai dépassé : aucune image après 35 s (état ${player.playbackState}, tampon ${player.bufferedPosition} ms)")
+                engine.stop()
+                reconnecting = false
+                errorDetail = "Délai dépassé · état ${player.playbackState} · tampon ${player.bufferedPosition / 1000} s"
+                error = "Le serveur n'envoie pas la vidéo. Essayez un autre lecteur (VLC) pour vérifier si le problème vient du serveur."
+            }
         }
     }
 
@@ -704,12 +715,18 @@ fun PlayerScreen(app: AppController, request: PlayRequest) {
                             modifier = Modifier.focusRequester(errorFr),
                             onClick = {
                                 error = null
+                                errorDetail = null
                                 retries = 0
                                 if (live != null) player.seekToDefaultPosition()
                                 engine.retry()
                             },
                         )
                         if (live != null) PillButton("Chaîne suivante", icon = Icons.Filled.SkipNext, onClick = { error = null; zap(1) })
+                        engine.currentUrl?.let { url ->
+                            PillButton("Autre lecteur", icon = Icons.Filled.OpenInNew, onClick = {
+                                openExternal(context, url, channel?.name ?: movie?.tile?.title ?: episodes?.series?.title)
+                            })
+                        }
                         PillButton("Retour", onClick = { app.back() })
                     }
                 }
@@ -1047,5 +1064,19 @@ private fun NextEpisodeCard(
             icon = Icons.Filled.PlayArrow, primary = true, onClick = onPlay,
             modifier = Modifier.focusRequester(focus),
         )
+    }
+}
+
+
+/** Ouvre le flux dans un autre lecteur installé (VLC, MX Player…). */
+private fun openExternal(context: android.content.Context, url: String, title: String?) {
+    val intent = android.content.Intent(android.content.Intent.ACTION_VIEW)
+        .setDataAndType(android.net.Uri.parse(url), "video/*")
+        .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+    if (title != null) intent.putExtra("title", title)
+    try {
+        context.startActivity(intent)
+    } catch (e: android.content.ActivityNotFoundException) {
+        Toast.makeText(context, "Aucun autre lecteur installé. Installez VLC depuis le Play Store.", Toast.LENGTH_LONG).show()
     }
 }

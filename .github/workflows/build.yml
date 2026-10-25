@@ -1,0 +1,77 @@
+name: Build APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Compile
+        shell: bash
+        run: |
+          set -o pipefail
+          chmod +x gradlew
+          ./gradlew assembleRelease --stacktrace --no-daemon 2>&1 | tee build.log
+
+      - name: Publish build log (branch build-log)
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p /tmp/log && cp build.log /tmp/log/build.log 2>/dev/null || echo "no log" > /tmp/log/build.log
+          cd /tmp/log
+          git init -q
+          git checkout -q -b build-log
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          echo "${{ job.status }} run ${{ github.run_number }} commit ${{ github.sha }}" > status.txt
+          git add -A
+          git commit -q -m "Log du build ${{ github.run_number }}"
+          git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" build-log
+
+      - name: Prepare APK
+        run: cp app/build/outputs/apk/release/app-release.apk lumen-tv.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lumen-tv-${{ github.run_number }}
+          path: lumen-tv.apk
+
+      - name: Publish APK (branch apk)
+        shell: bash
+        run: |
+          mkdir -p /tmp/apk && cp lumen-tv.apk /tmp/apk/
+          cd /tmp/apk
+          git init -q
+          git checkout -q -b apk
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add lumen-tv.apk
+          git commit -q -m "APK build ${{ github.run_number }}"
+          git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" apk
+
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: Lumen TV 1.0.${{ github.run_number }}
+          files: lumen-tv.apk
+          make_latest: true

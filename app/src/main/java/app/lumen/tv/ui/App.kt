@@ -235,6 +235,7 @@ private fun Splash(app: AppController) {
             !repo.hasCatalog() -> app.reset(Screen.Sync)
             else -> {
                 app.reset(Screen.Profiles())
+                repo.refreshAccountInBackground()
                 if (repo.catalogIsStale()) repo.syncInBackground()
             }
         }

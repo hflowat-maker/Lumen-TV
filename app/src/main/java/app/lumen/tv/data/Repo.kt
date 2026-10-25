@@ -103,6 +103,11 @@ class Repo(
         null
     }
 
+    /** Met à jour l'état du compte (connexions, adresse de diffusion) sans bloquer. */
+    fun refreshAccountInBackground() {
+        scope.launch { refreshAccountInfo() }
+    }
+
     fun syncInBackground() {
         scope.launch { runCatching { sync() } }
     }

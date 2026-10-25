@@ -382,6 +382,13 @@ fun PlayerScreen(app: AppController, request: PlayRequest) {
                 val technical = PlayerEngine.technical(e)
                 errorDetail = technical
                 error = PlayerEngine.describe(e)
+                // Un VPN actif est la cause la plus fréquente : beaucoup de fournisseurs refusent les vidéos via VPN.
+                if (isVpnActive(context)) {
+                    Log.w(CrashReport.TAG, "Refus du serveur ($code) avec un VPN actif sur la TV")
+                    error = "Un VPN est actif sur cette TV. Votre fournisseur refuse les vidéos qui passent par un VPN : " +
+                        "déconnectez-le, ou excluez Lumen TV du VPN (« tunnel partagé » dans l'application VPN)."
+                    return@LaunchedEffect
+                }
                 // Vérifie l'état de l'abonnement pour expliquer le refus.
                 val info = repo.refreshAccountInfo()
                 if (info != null) {
@@ -1158,4 +1165,13 @@ private fun openExternal(context: android.content.Context, url: String, title: S
     } catch (e: android.content.ActivityNotFoundException) {
         Toast.makeText(context, "Aucun autre lecteur installé. Installez VLC depuis le Play Store.", Toast.LENGTH_LONG).show()
     }
+}
+
+/** Vrai si le trafic de l'application passe par un VPN. */
+private fun isVpnActive(context: android.content.Context): Boolean = try {
+    val cm = context.getSystemService(android.net.ConnectivityManager::class.java)
+    val caps = cm?.getNetworkCapabilities(cm.activeNetwork)
+    caps?.hasTransport(android.net.NetworkCapabilities.TRANSPORT_VPN) == true
+} catch (e: Exception) {
+    false
 }

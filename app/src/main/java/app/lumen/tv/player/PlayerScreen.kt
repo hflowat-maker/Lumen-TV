@@ -129,14 +129,24 @@ fun PlayerScreen(app: AppController, request: PlayRequest) {
     val context = LocalContext.current
     val repo = app.repo
     val prefs = app.prefs
+    // Si l'aperçu de la tuile lit déjà cette chaîne, on reprend son lecteur (pas de nouvelle connexion).
+    val handed = remember {
+        val req = request as? PlayRequest.Live
+        if (req != null) app.preview.takeOver(req.channels.getOrNull(req.index)?.id)
+        else {
+            app.preview.release()
+            null
+        }
+    }
     val engine = remember {
-        PlayerEngine(
+        handed ?: PlayerEngine(
             context, (context.applicationContext as LumenApp).http, prefs.userAgent,
             alternateBase = repo.alternateStreamBase(), preferAlternate = prefs.preferStreamBase,
             initialStack = prefs.httpStack,
         )
     }
     val player = engine.player
+    var skipFirstLoad by remember { mutableStateOf(handed != null) }
 
     val live = request as? PlayRequest.Live
     val movie = request as? PlayRequest.Movie
@@ -144,12 +154,12 @@ fun PlayerScreen(app: AppController, request: PlayRequest) {
     val isVod = live == null
 
     // ---------------- État ----------------
-    var playbackState by remember { mutableIntStateOf(Player.STATE_IDLE) }
-    var isPlaying by remember { mutableStateOf(false) }
+    var playbackState by remember { mutableIntStateOf(player.playbackState) }
+    var isPlaying by remember { mutableStateOf(player.isPlaying) }
     var position by remember { mutableLongStateOf(0L) }
     var duration by remember { mutableLongStateOf(0L) }
     var buffered by remember { mutableLongStateOf(0L) }
-    var tracks by remember { mutableStateOf(Tracks.EMPTY) }
+    var tracks by remember { mutableStateOf(player.currentTracks) }
     var lastError by remember { mutableStateOf<PlaybackException?>(null) }
     var errorTick by remember { mutableIntStateOf(0) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -312,7 +322,8 @@ fun PlayerScreen(app: AppController, request: PlayRequest) {
             error = null
             retries = 0
             reconnecting = false
-            engine.playLive(repo.liveUrl(ch.id), prefs.liveFormat == "m3u8")
+            if (skipFirstLoad) skipFirstLoad = false
+            else engine.playLive(repo.liveUrl(ch.id), prefs.liveFormat == "m3u8")
             repo.touchChannel(ch.id)
             banner = true
         }

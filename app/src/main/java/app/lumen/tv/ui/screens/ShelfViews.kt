@@ -1,6 +1,14 @@
 package app.lumen.tv.ui.screens
 
 import android.os.Build
+import android.view.TextureView
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -231,6 +239,7 @@ fun ShelfView(
                     onDispose { if (isSel) focus.attached-- }
                 }
                 ShelfCard(
+                    app = app,
                     item = item,
                     big = isSel,
                     detail = if (isSel) detail else null,
@@ -292,6 +301,7 @@ private fun smallSize(item: ShelfItem): DpSize = when (item) {
 
 @Composable
 private fun ShelfCard(
+    app: AppController,
     item: ShelfItem,
     big: Boolean,
     detail: MovieInfo?,
@@ -307,10 +317,11 @@ private fun ShelfCard(
     val w by animateDpAsState(if (big) ShelfSize.big.width else small.width, tween(170), label = "w")
     val h by animateDpAsState(if (big) ShelfSize.big.height else small.height, tween(170), label = "h")
     val shape = RoundedCornerShape(if (big) 16.dp else 10.dp)
+    var focused by remember { mutableStateOf(false) }
     Clickable(
         onClick = onClick,
         onLongClick = onLongClick,
-        modifier = modifier.size(w, h),
+        modifier = modifier.size(w, h).onFocusChanged { focused = it.isFocused },
         shape = shape,
         container = C.Surface2,
         focusedContainer = C.Surface2,
@@ -321,7 +332,7 @@ private fun ShelfCard(
         when (item) {
             is TileItem -> if (big) BigTile(item, detail, showFlag) else SmallTile(item.tile, item.lang, showFlag)
             is ResumeItem -> ResumeCard(item.progress, big)
-            is ChannelItem -> ChannelCard(item.channel, item.lang, showFlag, big, epg)
+            is ChannelItem -> ChannelCard(app, item.channel, item.lang, showFlag, big, big && focused, epg)
             is SeeAllItem -> SeeAllCard(item, big)
         }
         if (favorite) {
@@ -488,7 +499,15 @@ private fun minutesLabel(ms: Long): String {
 }
 
 @Composable
-private fun BoxScope.ChannelCard(channel: Channel, lang: Lang?, showFlag: Boolean, big: Boolean, epg: List<EpgEntry>?) {
+private fun BoxScope.ChannelCard(
+    app: AppController,
+    channel: Channel,
+    lang: Lang?,
+    showFlag: Boolean,
+    big: Boolean,
+    preview: Boolean,
+    epg: List<EpgEntry>?,
+) {
     Box(Modifier.fillMaxSize().background(Brush.linearGradient(listOf(C.Surface3, C.Surface1))))
     if (!big) {
         ChannelLogo(channel, Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 16.dp))
@@ -497,7 +516,13 @@ private fun BoxScope.ChannelCard(channel: Channel, lang: Lang?, showFlag: Boolea
     }
     val now = System.currentTimeMillis()
     val current = epg?.firstOrNull { it.start <= now && it.end > now }
-    ChannelLogo(channel, Modifier.align(Alignment.TopStart).padding(start = 22.dp, top = 22.dp).size(150.dp, 84.dp))
+    // Aperçu vidéo avec le son quand la tuile reste sélectionnée un instant.
+    val video = if (preview) LiveVideo(app, channel) else false
+    if (video) {
+        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0.5f to Color.Transparent, 1f to Color(0xD91A0B12))))
+    } else {
+        ChannelLogo(channel, Modifier.align(Alignment.TopStart).padding(start = 22.dp, top = 22.dp).size(150.dp, 84.dp))
+    }
     Row(
         Modifier.align(Alignment.TopEnd).padding(14.dp).clip(RoundedCornerShape(7.dp)).background(Color(0x991A0B12))
             .padding(horizontal = 9.dp, vertical = 4.dp),
@@ -525,6 +550,42 @@ private fun BoxScope.ChannelCard(channel: Channel, lang: Lang?, showFlag: Boolea
             }
         }
     }
+}
+
+/**
+ * Vidéo de la chaîne dans la tuile, après une courte pause sur la tuile.
+ * Renvoie true dès que la première image s'affiche.
+ */
+@Composable
+private fun LiveVideo(app: AppController, channel: Channel): Boolean {
+    val preview = app.preview
+    val state by preview.state.collectAsState()
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    val lifeState by lifecycle.currentStateFlow.collectAsState()
+    val active = lifeState.isAtLeast(Lifecycle.State.STARTED)
+    LaunchedEffect(channel.id, active) {
+        if (!active) {
+            preview.release(channel.id)
+            return@LaunchedEffect
+        }
+        delay(800)
+        preview.start(channel)
+    }
+    DisposableEffect(channel.id) {
+        onDispose { preview.release(channel.id) }
+    }
+    val player = if (state.channelId == channel.id) preview.player else null
+    if (player != null) {
+        key(player) {
+            AndroidView(
+                factory = { ctx -> TextureView(ctx) },
+                update = { view -> player.setVideoTextureView(view) },
+                onRelease = { view -> player.clearVideoTextureView(view) },
+                modifier = Modifier.fillMaxSize().graphicsLayer { alpha = if (state.showing) 1f else 0f },
+            )
+        }
+    }
+    return player != null && state.showing
 }
 
 @Composable

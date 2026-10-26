@@ -67,6 +67,7 @@ import app.lumen.tv.data.PlayRequest
 import app.lumen.tv.data.Prefs
 import app.lumen.tv.data.Repo
 import app.lumen.tv.data.Tile
+import app.lumen.tv.player.LivePreview
 import app.lumen.tv.player.PlayerScreen
 import app.lumen.tv.ui.components.Avatar
 import app.lumen.tv.ui.components.Clickable
@@ -106,7 +107,7 @@ sealed interface Screen {
 }
 
 @Stable
-class AppController(val repo: Repo, val prefs: Prefs) {
+class AppController(val repo: Repo, val prefs: Prefs, val preview: LivePreview) {
     val stack = mutableStateListOf<Screen>(Screen.Splash)
 
     /** Étagères déjà calculées, affichées tout de suite au retour sur l'écran principal. */

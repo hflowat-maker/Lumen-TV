@@ -321,8 +321,10 @@ private fun TopBar(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.onFocusChanged { if (it.hasFocus) onTabBlur() },
         ) {
-            listOf(Lang.FR, Lang.EN, Lang.TR).forEach { l -> LangChip(l, l in langs, { onToggleLang(l) }, onLangPanel) }
-            if (Lang.OTHER in langs) LangChip(Lang.OTHER, true, { onToggleLang(Lang.OTHER) }, onLangPanel)
+            // Avec « Autres langues » cochée, 4 puces : libellés courts pour que la barre tienne sur l'écran.
+            val compact = Lang.OTHER in langs
+            listOf(Lang.FR, Lang.EN, Lang.TR).forEach { l -> LangChip(l, l in langs, compact, { onToggleLang(l) }, onLangPanel) }
+            if (compact) LangChip(Lang.OTHER, true, true, { onToggleLang(Lang.OTHER) }, onLangPanel)
         }
         Spacer(Modifier.width(12.dp))
         Row(
@@ -350,7 +352,7 @@ private fun TopBar(
 
 /** Puce de langue : OK coche ou décoche, OK maintenu ouvre le panneau des langues. */
 @Composable
-private fun LangChip(lang: Lang, on: Boolean, onToggle: () -> Unit, onLongClick: () -> Unit) {
+private fun LangChip(lang: Lang, on: Boolean, compact: Boolean, onToggle: () -> Unit, onLongClick: () -> Unit) {
     val shape = RoundedCornerShape(15.dp)
     Clickable(
         onClick = onToggle,
@@ -367,7 +369,10 @@ private fun LangChip(lang: Lang, on: Boolean, onToggle: () -> Unit, onLongClick:
         Row(Modifier.align(Alignment.Center).padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically) {
             LangFlag(lang, width = 16.dp, dim = !on)
             Spacer(Modifier.width(6.dp))
-            Text(lang.chip, style = T.chip, maxLines = 1)
+            Text(
+                if (compact) when (lang) { Lang.FR -> "FR"; Lang.EN -> "EN"; Lang.TR -> "Turc"; Lang.OTHER -> "Autres" } else lang.chip,
+                style = T.chip, maxLines = 1,
+            )
         }
     }
 }

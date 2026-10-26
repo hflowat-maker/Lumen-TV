@@ -1,7 +1,10 @@
 package app.lumen.tv.ui.screens
 
 import android.content.Context
-import android.media.MediaPlayer
+import android.media.AudioAttributes
+import android.media.SoundPool
+import android.os.Handler
+import android.os.Looper
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutLinearInEasing
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -31,6 +34,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -91,9 +95,6 @@ import kotlinx.coroutines.launch
 private const val WHITE_PATH = "M22,10 V84 A14,14 0 0 0 50,84 V62 A13,13 0 0 1 76,62 V102"
 private const val YELLOW_PATH = "M76,62 A13,13 0 0 1 102,62 V102"
 
-private val VioletLight = Color(0xFF6A3BFF)
-private val Violet = Color(0xFF5426EE)
-private val VioletDeep = Color(0xFF3E17C4)
 private val Yellow = Color(0xFFFFD23F)
 
 /**
@@ -127,10 +128,17 @@ fun IntroScreen(app: AppController) {
     val rootFr = remember { FocusRequester() }
     val retryFr = remember { FocusRequester() }
 
+    val sounds = remember { IntroSounds(context, app.prefs.introSound) }
+    DisposableEffect(Unit) { onDispose { sounds.releaseLater() } }
+
     suspend fun leave() {
         if (leaving) return
         leaving = true
-        glow.animateTo(1f, tween(160))
+        // « Ta-dam » de fin de chargement : deux éclats de l'arche calés sur les deux frappes du son.
+        sounds.playDone()
+        glow.animateTo(1f, tween(140))
+        glow.animateTo(0.6f, tween(90))
+        glow.animateTo(1f, tween(110))
         outro.animateTo(1f, tween(720, easing = FastOutLinearInEasing))
         app.reset(if (hasAccount) Screen.Profiles() else Screen.Login)
     }
@@ -138,7 +146,7 @@ fun IntroScreen(app: AppController) {
     // Animation d'ouverture et son.
     LaunchedEffect(Unit) {
         rootFr.safeRequest(30)
-        if (app.prefs.introSound) playIntroSound(context)
+        sounds.playStart()
         launch { draw.animateTo(1f, tween(1000, easing = FastOutSlowInEasing)) }
         launch {
             delay(850)
@@ -196,9 +204,10 @@ fun IntroScreen(app: AppController) {
             .fillMaxSize()
             .drawBehind {
                 val o = outro.value
+                // Fond noir ; il prend les couleurs de l'appli pendant l'envol du logo.
                 drawRect(
                     Brush.linearGradient(
-                        listOf(lerp(VioletLight, C.BgGlow, o), lerp(Violet, C.Bg, o), lerp(VioletDeep, C.BgDeep, o)),
+                        listOf(lerp(Color.Black, C.BgGlow, o), lerp(Color.Black, C.Bg, o), lerp(Color.Black, C.BgDeep, o)),
                         start = Offset.Zero, end = Offset(size.width, size.height),
                     )
                 )
@@ -342,11 +351,54 @@ private fun LogoStroke(draw: Float, arch: Float, glow: Float, modifier: Modifier
     }
 }
 
-private fun playIntroSound(context: Context) {
-    runCatching {
-        MediaPlayer.create(context, R.raw.intro)?.apply {
-            setOnCompletionListener { it.release() }
-            start()
+/**
+ * Sons de l'ouverture (SoundPool : départ immédiat, sans latence).
+ * Libérés un peu après la fermeture de l'écran pour laisser finir le son de fin.
+ */
+private class IntroSounds(context: Context, private val enabled: Boolean) {
+    private val pool: SoundPool? = if (!enabled) null else runCatching {
+        SoundPool.Builder()
+            .setMaxStreams(2)
+            .setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                    .build()
+            )
+            .build()
+    }.getOrNull()
+    private val loaded = HashSet<Int>()
+    private var pendingStart = false
+    private var startId = 0
+    private var doneId = 0
+
+    init {
+        pool?.setOnLoadCompleteListener { p, id, status ->
+            if (status == 0) {
+                loaded += id
+                if (id == startId && pendingStart) {
+                    pendingStart = false
+                    p.play(id, 1f, 1f, 1, 0, 1f)
+                }
+            }
         }
+        startId = pool?.load(context, R.raw.intro_start, 1) ?: 0
+        doneId = pool?.load(context, R.raw.intro_done, 1) ?: 0
+    }
+
+    fun playStart() {
+        val p = pool ?: return
+        if (startId in loaded) p.play(startId, 1f, 1f, 1, 0, 1f) else pendingStart = true
+    }
+
+    fun playDone() {
+        val p = pool ?: return
+        pendingStart = false
+        if (doneId in loaded) p.play(doneId, 1f, 1f, 2, 0, 1f)
+    }
+
+    fun releaseLater() {
+        val p = pool ?: return
+        Handler(Looper.getMainLooper()).postDelayed({ runCatching { p.release() } }, 3000)
     }
 }

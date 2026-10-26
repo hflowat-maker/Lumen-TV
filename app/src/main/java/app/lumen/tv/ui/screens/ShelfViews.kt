@@ -2,6 +2,12 @@ package app.lumen.tv.ui.screens
 
 import android.os.Build
 import android.view.TextureView
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.foundation.gestures.animateScrollBy
+import androidx.compose.foundation.lazy.items
+import androidx.compose.ui.platform.LocalContext
+import coil.request.ImageRequest
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.key
@@ -145,6 +151,11 @@ class ShelfFocus {
 
 // ---------------- Étagère ----------------
 
+/**
+ * Une étagère : la grande carte à gauche reste en place et porte le focus ; gauche/droite
+ * change simplement son contenu, et les cartes suivantes glissent à côté. Aucun changement
+ * de taille ni de focus pendant le défilement : c'est ce qui le rend fluide sur une TV.
+ */
 @Composable
 fun ShelfView(
     app: AppController,
@@ -160,12 +171,26 @@ fun ShelfView(
     onLongClick: (ShelfItem) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val scope = rememberCoroutineScope()
-    val rowState = rememberLazyListState()
+    val density = LocalDensity.current
     var selected by rememberSaveable(shelf.key) { mutableIntStateOf(0) }
-    val sel = selected.coerceIn(0, (shelf.items.size - 1).coerceAtLeast(0))
+    val rowState = rememberLazyListState(initialFirstVisibleItemIndex = selected + 1)
+    val last = (shelf.items.size - 1).coerceAtLeast(0)
+    val sel = selected.coerceIn(0, last)
     val selItem = shelf.items.getOrNull(sel)
     val dim by animateFloatAsState(if (isCurrent) 1f else 0.28f, tween(250), label = "dim")
+    val small = shelf.items.firstOrNull()?.let { smallSize(it) } ?: ShelfSize.poster
+    val stepPx = with(density) { (small.width + ShelfSize.gap).toPx() }
+
+    // Les cartes suivantes glissent pour que la première visible soit celle d'après la sélection.
+    var rowReady by remember { mutableStateOf(false) }
+    LaunchedEffect(sel, stepPx) {
+        val target = sel + 1
+        val now = rowState.firstVisibleItemIndex * stepPx + rowState.firstVisibleItemScrollOffset
+        val delta = target * stepPx - now
+        if (kotlin.math.abs(delta) > stepPx * 6 || !rowReady) rowState.scrollToItem(target)
+        else if (delta != 0f) rowState.animateScrollBy(delta, tween(240, easing = FastOutSlowInEasing))
+        rowReady = true
+    }
 
     // Fiche du film sélectionné (résumé, image horizontale), chargée après une courte pause.
     val detail by produceState<MovieInfo?>(null, selItem?.key, isCurrent) {
@@ -194,6 +219,11 @@ fun ShelfView(
         }
     }
 
+    DisposableEffect(Unit) {
+        focus.attached++
+        onDispose { focus.attached-- }
+    }
+
     Box(
         modifier
             .fillMaxWidth()
@@ -204,6 +234,14 @@ fun ShelfView(
                 when (ev.key) {
                     Key.DirectionDown -> onVertical(false)
                     Key.DirectionUp -> onVertical(true)
+                    Key.DirectionRight -> {
+                        if (sel < last) selected = sel + 1
+                        true
+                    }
+                    Key.DirectionLeft -> {
+                        if (sel > 0) selected = sel - 1
+                        true
+                    }
                     else -> false
                 }
             }
@@ -220,45 +258,46 @@ fun ShelfView(
                 modifier = Modifier.padding(start = ShelfSize.infoStart, top = 6.dp).width(ShelfSize.infoWidth),
             )
         }
+        val stripAlpha = 0.55f + 0.45f * ((dim - 0.28f) / 0.72f)
+        if (selItem != null) {
+            HeroCard(
+                app = app,
+                item = selItem,
+                detail = detail,
+                epg = epg,
+                showFlag = showFlags,
+                favorite = isFavorite(selItem, favorites),
+                progress = progressOf(selItem, progress),
+                onClick = { onClick(selItem) },
+                onLongClick = { onLongClick(selItem) },
+                modifier = Modifier
+                    .padding(start = Safe.h, top = ShelfSize.stripTop)
+                    .graphicsLayer { alpha = stripAlpha }
+                    .focusRequester(focus.requester),
+            )
+        }
         LazyRow(
             state = rowState,
             modifier = Modifier
-                .padding(top = ShelfSize.stripTop)
+                .padding(start = Safe.h + ShelfSize.big.width + ShelfSize.gap, top = ShelfSize.stripTop)
                 .fillMaxWidth()
                 .height(ShelfSize.big.height)
-                .graphicsLayer { alpha = 0.55f + 0.45f * ((dim - 0.28f) / 0.72f) },
-            contentPadding = PaddingValues(start = Safe.h, end = Safe.h),
+                .graphicsLayer { alpha = stripAlpha },
             horizontalArrangement = Arrangement.spacedBy(ShelfSize.gap),
             verticalAlignment = Alignment.Bottom,
             userScrollEnabled = false,
         ) {
-            itemsIndexed(shelf.items, key = { _, it -> it.key }) { idx, item ->
-                val isSel = idx == sel
-                DisposableEffect(isSel) {
-                    if (isSel) focus.attached++
-                    onDispose { if (isSel) focus.attached-- }
-                }
-                ShelfCard(
-                    app = app,
+            items(shelf.items, key = { it.key }) { item ->
+                SmallCard(
                     item = item,
-                    big = isSel,
-                    detail = if (isSel) detail else null,
-                    epg = if (isSel) epg else null,
+                    size = smallSize(item),
                     showFlag = showFlags,
                     favorite = isFavorite(item, favorites),
                     progress = progressOf(item, progress),
-                    onClick = { onClick(item) },
-                    onLongClick = { onLongClick(item) },
-                    modifier = Modifier
-                        .then(if (isSel) Modifier.focusRequester(focus.requester) else Modifier)
-                        .onFocusChanged {
-                            if (it.isFocused && selected != idx) {
-                                selected = idx
-                                scope.launch { rowState.animateScrollToItem(idx) }
-                            }
-                        },
                 )
             }
+            // Espace final : permet de faire défiler jusqu'après la dernière carte.
+            item(key = "end") { Spacer(Modifier.width(ShelfSize.infoWidth + ShelfSize.gap)) }
         }
     }
 }
@@ -299,11 +338,11 @@ private fun smallSize(item: ShelfItem): DpSize = when (item) {
     is ResumeItem, is ChannelItem -> ShelfSize.wide
 }
 
+/** Grande carte de l'étagère : seule carte focalisable, son contenu suit la sélection. */
 @Composable
-private fun ShelfCard(
+private fun HeroCard(
     app: AppController,
     item: ShelfItem,
-    big: Boolean,
     detail: MovieInfo?,
     epg: List<EpgEntry>?,
     showFlag: Boolean,
@@ -313,37 +352,75 @@ private fun ShelfCard(
     onLongClick: () -> Unit,
     modifier: Modifier,
 ) {
-    val small = smallSize(item)
-    val w by animateDpAsState(if (big) ShelfSize.big.width else small.width, tween(170), label = "w")
-    val h by animateDpAsState(if (big) ShelfSize.big.height else small.height, tween(170), label = "h")
-    val shape = RoundedCornerShape(if (big) 16.dp else 10.dp)
     var focused by remember { mutableStateOf(false) }
     Clickable(
         onClick = onClick,
         onLongClick = onLongClick,
-        modifier = modifier.size(w, h).onFocusChanged { focused = it.isFocused },
-        shape = shape,
+        modifier = modifier.size(ShelfSize.big).onFocusChanged { focused = it.isFocused },
+        shape = RoundedCornerShape(16.dp),
         container = C.Surface2,
         focusedContainer = C.Surface2,
-        focusedScale = if (big) 1f else 1.04f,
+        focusedScale = 1f,
         borderWidth = 3.dp,
         borderColor = C.Gold,
     ) {
-        when (item) {
-            is TileItem -> if (big) BigTile(item, detail, showFlag) else SmallTile(item.tile, item.lang, showFlag)
-            is ResumeItem -> ResumeCard(item.progress, big)
-            is ChannelItem -> ChannelCard(app, item.channel, item.lang, showFlag, big, big && focused, epg)
-            is SeeAllItem -> SeeAllCard(item, big)
+        // Fondu bref quand le contenu change, pour adoucir le passage d'une carte à l'autre.
+        val fade = remember(item.key) { Animatable(0.35f) }
+        LaunchedEffect(item.key) { fade.animateTo(1f, tween(170)) }
+        Box(Modifier.fillMaxSize().graphicsLayer { alpha = fade.value }) {
+            when (item) {
+                is TileItem -> BigTile(item, detail, showFlag)
+                is ResumeItem -> ResumeCard(item.progress, big = true)
+                is ChannelItem -> ChannelCard(app, item.channel, item.lang, showFlag, big = true, preview = focused, epg = epg)
+                is SeeAllItem -> SeeAllCard(item, big = true)
+            }
         }
-        if (favorite) {
-            Box(
-                Modifier.align(Alignment.TopStart).padding(8.dp).size(22.dp).clip(CircleShape).background(Color(0xB31A0B12)),
-                contentAlignment = Alignment.Center,
-            ) { Icon(Icons.Filled.Favorite, null, tint = C.Gold, modifier = Modifier.size(12.dp)) }
-        }
+        if (favorite) FavoriteMark()
         if (progress != null && progress > 0f) {
             ProgressLine(progress, Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp))
         }
+    }
+}
+
+/** Petite carte d'aperçu (non focalisable) à droite de la grande carte. */
+@Composable
+private fun SmallCard(item: ShelfItem, size: DpSize, showFlag: Boolean, favorite: Boolean, progress: Float?) {
+    Box(Modifier.size(size).clip(RoundedCornerShape(10.dp)).background(C.Surface2)) {
+        when (item) {
+            is TileItem -> SmallTile(item.tile, item.lang, showFlag)
+            is ResumeItem -> ResumeCard(item.progress, big = false)
+            is ChannelItem -> SmallChannel(item.channel, item.lang, showFlag)
+            is SeeAllItem -> SeeAllCard(item, big = false)
+        }
+        if (favorite) FavoriteMark()
+        if (progress != null && progress > 0f) {
+            ProgressLine(progress, Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(horizontal = 8.dp, vertical = 7.dp))
+        }
+    }
+}
+
+@Composable
+private fun BoxScope.FavoriteMark() {
+    Box(
+        Modifier.align(Alignment.TopStart).padding(8.dp).size(22.dp).clip(CircleShape).background(Color(0xB31A0B12)),
+        contentAlignment = Alignment.Center,
+    ) { Icon(Icons.Filled.Favorite, null, tint = C.Gold, modifier = Modifier.size(12.dp)) }
+}
+
+// Affiches : même requête (même taille) pour la petite carte et la grande, l'image est donc
+// déjà en mémoire quand une carte devient la grande. Le fond flou est une version minuscule
+// agrandie (aucun effet de flou à calculer, rapide sur toutes les TV).
+@Composable
+private fun posterRequest(url: String): ImageRequest {
+    val ctx = LocalContext.current
+    return remember(url) { ImageRequest.Builder(ctx).data(url).size(270, 405).build() }
+}
+
+@Composable
+private fun tinyRequest(url: String): ImageRequest {
+    val ctx = LocalContext.current
+    return remember(url) {
+        ImageRequest.Builder(ctx).data(url).size(30, 45).memoryCacheKey("$url#flou").build()
     }
 }
 
@@ -367,7 +444,7 @@ private fun BoxScope.SmallTile(tile: Tile, lang: Lang?, showFlag: Boolean) {
         )
     }
     if (tile.image != null) {
-        AsyncImage(model = tile.image, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+        AsyncImage(model = posterRequest(tile.image), contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
     }
     if (showFlag && lang != null) {
         Box(Modifier.align(Alignment.TopEnd).padding(7.dp).clip(RoundedCornerShape(4.dp)).background(Color(0xB31A0B12)).padding(4.dp)) {
@@ -410,11 +487,8 @@ private fun BoxScope.PosterComposite(image: String?, title: String) {
     Box(Modifier.fillMaxSize().background(fallback(title)))
     if (image != null) {
         AsyncImage(
-            model = image, contentDescription = null, contentScale = ContentScale.Crop,
-            modifier = Modifier
-                .fillMaxSize()
-                .graphicsLayer { scaleX = 1.3f; scaleY = 1.3f; alpha = 0.7f }
-                .then(if (Build.VERSION.SDK_INT >= 31) Modifier.blur(26.dp) else Modifier),
+            model = tinyRequest(image), contentDescription = null, contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize().graphicsLayer { alpha = 0.75f },
         )
     }
     Box(
@@ -424,7 +498,7 @@ private fun BoxScope.PosterComposite(image: String?, title: String) {
     )
     if (image != null) {
         AsyncImage(
-            model = image, contentDescription = null, contentScale = ContentScale.Crop,
+            model = posterRequest(image), contentDescription = null, contentScale = ContentScale.Crop,
             modifier = Modifier
                 .align(Alignment.CenterEnd)
                 .padding(12.dp)
@@ -499,6 +573,13 @@ private fun minutesLabel(ms: Long): String {
 }
 
 @Composable
+private fun BoxScope.SmallChannel(channel: Channel, lang: Lang?, showFlag: Boolean) {
+    Box(Modifier.fillMaxSize().background(Brush.linearGradient(listOf(C.Surface3, C.Surface1))))
+    ChannelLogo(channel, Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 16.dp))
+    if (showFlag && lang != null) LangFlag(lang, Modifier.align(Alignment.TopEnd).padding(6.dp), width = 13.dp)
+}
+
+@Composable
 private fun BoxScope.ChannelCard(
     app: AppController,
     channel: Channel,
@@ -509,11 +590,6 @@ private fun BoxScope.ChannelCard(
     epg: List<EpgEntry>?,
 ) {
     Box(Modifier.fillMaxSize().background(Brush.linearGradient(listOf(C.Surface3, C.Surface1))))
-    if (!big) {
-        ChannelLogo(channel, Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 16.dp))
-        if (showFlag && lang != null) LangFlag(lang, Modifier.align(Alignment.TopEnd).padding(6.dp), width = 13.dp)
-        return
-    }
     val now = System.currentTimeMillis()
     val current = epg?.firstOrNull { it.start <= now && it.end > now }
     // Aperçu vidéo avec le son quand la tuile reste sélectionnée un instant.

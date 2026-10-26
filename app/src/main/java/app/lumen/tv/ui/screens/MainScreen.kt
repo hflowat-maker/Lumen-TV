@@ -1,6 +1,11 @@
 package app.lumen.tv.ui.screens
 
 import android.app.Activity
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.gestures.animateScrollBy
+import androidx.compose.ui.platform.LocalDensity
+import kotlinx.coroutines.Job
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
@@ -417,27 +422,36 @@ private fun TabContent(
     val listState = rememberLazyListState()
     var current by rememberSaveable { mutableIntStateOf(0) }
     val focuses = remember { HashMap<String, ShelfFocus>() }
-    var moving by remember { mutableStateOf(false) }
+    var scrollJob by remember { mutableStateOf<Job?>(null) }
+    val shelfPx = with(LocalDensity.current) { ShelfSize.height.toPx() }
     val list = shelves
 
     fun focusOf(key: String) = focuses.getOrPut(key) { ShelfFocus() }
 
+    // Défilement vertical précis et doux : chaque étagère a la même hauteur.
+    fun scrollToShelf(j: Int): Job {
+        scrollJob?.cancel()
+        val job = scope.launch {
+            val now = listState.firstVisibleItemIndex * shelfPx + listState.firstVisibleItemScrollOffset
+            val delta = j * shelfPx - now
+            if (kotlin.math.abs(delta) > shelfPx * 4) listState.scrollToItem(j)
+            else if (delta != 0f) listState.animateScrollBy(delta, tween(320, easing = FastOutSlowInEasing))
+        }
+        scrollJob = job
+        return job
+    }
+
     fun goTo(j: Int) {
         val l = shelves ?: return
         if (j !in l.indices) return
-        moving = true
         current = j
-        scope.launch {
-            val f = focusOf(l[j].key)
-            val early = f.request()
-            try {
-                listState.animateScrollToItem(j)
-            } finally {
-                if (!early) {
-                    delay(16)
-                    f.request()
-                }
-                moving = false
+        val f = focusOf(l[j].key)
+        val early = f.request()
+        val job = scrollToShelf(j)
+        if (!early) {
+            scope.launch {
+                job.join()
+                if (current == j) f.request()
             }
         }
     }
@@ -517,18 +531,17 @@ private fun TabContent(
                         favorites = favorites,
                         progress = progress,
                         onFocusShelf = {
-                            if (current != i && !moving) {
+                            if (current != i) {
                                 current = i
-                                scope.launch { listState.animateScrollToItem(i) }
+                                scrollToShelf(i)
                             }
                         },
                         onVertical = { up ->
-                            if (!moving) {
-                                if (up) {
-                                    if (i == 0) onUpFromTop() else goTo(i - 1)
-                                } else if (i < list.lastIndex) {
-                                    goTo(i + 1)
-                                }
+                            val c = current
+                            if (up) {
+                                if (c == 0) onUpFromTop() else goTo(c - 1)
+                            } else if (c < list.lastIndex) {
+                                goTo(c + 1)
                             }
                             true
                         },

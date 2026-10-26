@@ -36,7 +36,8 @@ import androidx.tv.material3.Text
 import app.lumen.tv.data.Channel
 import app.lumen.tv.data.Text as Txt
 import app.lumen.tv.ui.theme.C
-import app.lumen.tv.ui.theme.InterDisplay
+import app.lumen.tv.ui.theme.Sans
+import androidx.compose.ui.text.font.FontWeight
 import app.lumen.tv.ui.theme.T
 import coil.compose.AsyncImage
 
@@ -225,7 +226,7 @@ fun Avatar(name: String, color: Int, modifier: Modifier = Modifier, size: Dp = 1
     ) {
         Text(
             Txt.initials(name),
-            style = T.hero.copy(fontFamily = InterDisplay, fontSize = (size.value * 0.42f).sp, lineHeight = (size.value * 0.46f).sp),
+            style = T.hero.copy(fontFamily = Sans, fontWeight = FontWeight.Bold, fontSize = (size.value * 0.42f).sp, lineHeight = (size.value * 0.46f).sp),
             color = C.Bg,
         )
         if (kid) {
@@ -264,7 +265,7 @@ fun SeeAllCard(onClick: () -> Unit, modifier: Modifier = Modifier, width: Dp = C
         modifier = modifier.width(width).aspectRatio(ratio),
         shape = cardShape,
         container = C.Surface1,
-        focusedContainer = Color.White,
+        focusedContainer = C.Focus,
         contentColor = C.Text2,
         focusedContentColor = C.Bg,
         focusedScale = 1.08f,

@@ -107,7 +107,7 @@ fun ProfilesScreen(app: AppController, manage: Boolean) {
                                 modifier = Modifier.size(112.dp),
                                 shape = RoundedCornerShape(18.dp),
                                 container = C.Surface2,
-                                focusedContainer = Color.White,
+                                focusedContainer = C.Focus,
                                 contentColor = C.Text2,
                                 focusedContentColor = C.Bg,
                                 focusedScale = 1.1f,

@@ -29,6 +29,8 @@ data class SyncProgress(
     val done: Boolean get() = !running && error == null && live >= 0 && movies >= 0 && series >= 0
 }
 
+private const val SHELF_LIMIT = 40
+
 class Repo(
     private val prefs: Prefs,
     private val api: XtreamApi,
@@ -189,92 +191,235 @@ class Repo(
 
     suspend fun selectProfile(p: Profile) = withContext(Dispatchers.IO) {
         prefs.activeProfileId = p.id
-        _langMode.value = LangMode.of(prefs.langFor(p.id) ?: if (p.isKid) LangMode.FR.key else LangMode.BOTH.key)
+        _langs.value = Lang.decode(prefs.langFor(p.id)) ?: if (p.isKid) Lang.KIDS else Lang.DEFAULT
         _profile.value = p
         reloadUserData()
     }
 
-    // ---------------- Langue et regroupements ----------------
+    // ---------------- Langues ----------------
 
-    private val _langMode = MutableStateFlow(LangMode.BOTH)
-    val langMode: StateFlow<LangMode> = _langMode.asStateFlow()
+    private val _langs = MutableStateFlow(Lang.DEFAULT)
+    val langs: StateFlow<Set<Lang>> = _langs.asStateFlow()
 
-    fun setLangMode(mode: LangMode) {
-        _langMode.value = mode
-        _profile.value?.let { prefs.setLangFor(it.id, mode.key) }
+    /** Coche ou décoche une langue. Refuse de décocher la dernière (renvoie false). */
+    fun toggleLang(lang: Lang): Boolean {
+        val cur = _langs.value
+        val next = if (lang in cur) cur - lang else cur + lang
+        if (next.isEmpty()) return false
+        _langs.value = next
+        _profile.value?.let { prefs.setLangFor(it.id, Lang.encode(next)) }
+        return true
     }
 
-    suspend fun catInfos(type: ContentType): List<CatInfo> = withContext(Dispatchers.IO) {
-        Classifier.classify(type, db.categories(type, filter))
-    }
+    @androidx.compose.runtime.Immutable
+    data class LangCount(val movies: Int, val series: Int, val channels: Int)
 
-    /** Puces (genres / thèmes / langues) non vides pour le type et la langue choisie. */
-    suspend fun groups(type: ContentType, mode: LangMode = _langMode.value): List<Group> = withContext(Dispatchers.IO) {
-        val infos = Classifier.classify(type, db.categories(type, filter))
-        val langIds = infos.filter { mode.accepts(it.lang) }.map { it.id }
+    /** Nombre de films, séries et chaînes par langue, pour le panneau Langues. */
+    suspend fun langCounts(): Map<Lang, LangCount> = withContext(Dispatchers.IO) {
         val f = filter
-        Classifier.groupsFor(type, infos, mode).mapNotNull { g ->
-            val count = if (type == ContentType.LIVE) db.channelCountInCats(g.catIds, f)
-            else db.groupCount(type, g.catIds, f, g.itemGenreKeywords, langIds)
-            if (count > 0) g.copy(count = count) else null
+        fun count(type: ContentType): Map<Lang, Int> = Classifier.classify(type, db.categories(type, f))
+            .groupBy { it.lang }.mapValues { e -> e.value.sumOf { it.count } }
+        val m = count(ContentType.MOVIE)
+        val s = count(ContentType.SERIES)
+        val l = count(ContentType.LIVE)
+        Lang.entries.associateWith { LangCount(m[it] ?: 0, s[it] ?: 0, l[it] ?: 0) }
+    }
+
+    // ---------------- Étagères ----------------
+
+    private fun index(type: ContentType, f: ContentFilter): List<CatInfo> = Classifier.classify(type, db.categories(type, f))
+
+    private fun langMap(infos: List<CatInfo>): Map<String, Lang> = infos.associate { it.id to it.lang }
+
+    /** Étagère de films ou de séries, tronquée avec une carte « Tout voir ». */
+    private fun vodShelf(
+        type: ContentType,
+        key: String,
+        title: String,
+        subtitle: (Int) -> String?,
+        catIds: List<String>,
+        langOf: Map<String, Lang>,
+        f: ContentFilter,
+        genreLike: List<String> = emptyList(),
+        langCatIds: List<String> = emptyList(),
+    ): Shelf? {
+        if (catIds.isEmpty() && genreLike.isEmpty()) return null
+        val tiles = db.groupTiles(type, catIds, f, SHELF_LIMIT + 1, genreLike, langCatIds)
+        if (tiles.isEmpty()) return null
+        val total = if (tiles.size > SHELF_LIMIT) db.groupCount(type, catIds, f, genreLike, langCatIds) else tiles.size
+        val items = ArrayList<ShelfItem>(SHELF_LIMIT + 1)
+        tiles.take(SHELF_LIMIT).mapTo(items) { TileItem(it, langOf[it.categoryId]) }
+        if (total > SHELF_LIMIT) items += SeeAllItem(GridTarget(key, type, title, catIds, genreLike, langCatIds), total)
+        return Shelf(key, title, subtitle(total), items)
+    }
+
+    private fun channelShelf(key: String, title: String, subtitle: (Int) -> String?, channels: List<Channel>, langOf: Map<String, Lang>): Shelf? {
+        if (channels.isEmpty()) return null
+        return Shelf(key, title, subtitle(channels.size), channels.map { ChannelItem(it, langOf[it.categoryId]) })
+    }
+
+    private fun unit(type: ContentType, n: Int): String = when (type) {
+        ContentType.MOVIE -> Text.count(n, "film", "films")
+        ContentType.SERIES -> Text.count(n, "série", "séries")
+        ContentType.LIVE -> Text.count(n, "chaîne", "chaînes")
+    }
+
+    private fun langTitle(type: ContentType, lang: Lang): String = when (type) {
+        ContentType.MOVIE -> when (lang) {
+            Lang.FR -> "Films français"
+            Lang.EN -> "Films en anglais"
+            Lang.TR -> "Films turcs"
+            Lang.OTHER -> "Films, autres langues"
+        }
+        ContentType.SERIES -> when (lang) {
+            Lang.FR -> "Séries françaises"
+            Lang.EN -> "Séries en anglais"
+            Lang.TR -> "Séries turques"
+            Lang.OTHER -> "Séries, autres langues"
+        }
+        ContentType.LIVE -> when (lang) {
+            Lang.FR -> "Chaînes françaises"
+            Lang.EN -> "Chaînes en anglais"
+            Lang.TR -> "Chaînes turques"
+            Lang.OTHER -> "Chaînes, autres langues"
         }
     }
 
-    suspend fun groupTiles(type: ContentType, group: Group, limit: Int = 1500): List<Tile> = withContext(Dispatchers.IO) {
-        val mode = _langMode.value
-        val langIds = if (group.itemGenreKeywords.isEmpty()) emptyList()
-        else Classifier.classify(type, db.categories(type, filter)).filter { mode.accepts(it.lang) }.map { it.id }
-        val lim = if (group.key == "new") 300 else limit
-        db.groupTiles(type, group.catIds, filter, lim, group.itemGenreKeywords, langIds)
+    private fun langSubtitle(type: ContentType, lang: Lang, total: Int): String {
+        val sub = if (lang == Lang.TR) (if (type == ContentType.SERIES) "Sous-titrées en arabe, " else "Sous-titrés en arabe, ") else ""
+        val what = if (type == ContentType.SERIES) "mises à jour en dernier" else "ajoutés en dernier"
+        return "$sub$what, ${unit(type, total)} au total".replaceFirstChar { it.uppercase() }
     }
 
-    suspend fun groupChannels(group: Group): List<Channel> = withContext(Dispatchers.IO) {
-        db.channelsInCats(group.catIds, filter)
+    suspend fun shelves(tab: Tab): List<Shelf> = withContext(Dispatchers.IO) {
+        when (tab) {
+            Tab.HOME -> homeShelves()
+            Tab.LIVE -> liveShelves()
+            Tab.MOVIES -> vodShelves(ContentType.MOVIE)
+            Tab.SERIES -> vodShelves(ContentType.SERIES)
+            Tab.MINE -> mineShelves()
+        }
     }
 
-    /** Toutes les chaînes de la langue choisie. */
-    suspend fun languageChannels(): List<Channel> = withContext(Dispatchers.IO) {
-        val mode = _langMode.value
-        val ids = Classifier.classify(ContentType.LIVE, db.categories(ContentType.LIVE, filter))
-            .filter { mode.accepts(it.lang) }.map { it.id }
-        db.channelsInCats(ids, filter)
-    }
-
-    data class HubData(
-        val resume: WatchProgress?,
-        val newMovie: Tile?,
-        val newSeries: Tile?,
-        val movieCount: Int,
-        val seriesCount: Int,
-        val channel: Channel?,
-        val channelCount: Int,
-        val myList: List<Tile>,
-        val myListCount: Int,
-    )
-
-    suspend fun hubData(): HubData = withContext(Dispatchers.IO) {
-        val mode = _langMode.value
+    private suspend fun homeShelves(): List<Shelf> {
         val f = filter
-        fun langIds(type: ContentType) = Classifier.classify(type, db.categories(type, f))
-            .filter { mode.accepts(it.lang) }.map { it.id }
-        val movieIds = langIds(ContentType.MOVIE)
-        val seriesIds = langIds(ContentType.SERIES)
-        val liveIds = langIds(ContentType.LIVE)
-        val favChannels = favoriteChannels()
-        val channel = favChannels.firstOrNull() ?: recentChannels().firstOrNull()
-            ?: db.channelsInCats(liveIds, f).firstOrNull()
+        val langs = _langs.value
+        val out = ArrayList<Shelf>()
+        val resume = continueWatching()
+        if (resume.isNotEmpty()) {
+            out += Shelf("resume", "Reprendre", Text.count(resume.size, "programme en cours", "programmes en cours"), resume.map { ResumeItem(it) })
+        }
+        val movies = index(ContentType.MOVIE, f)
+        val series = index(ContentType.SERIES, f)
+        val mLang = langMap(movies)
+        val sLang = langMap(series)
+        val sIds = Classifier.idsFor(series, langs)
+        val since = System.currentTimeMillis() / 1000 - 24 * 3600
+        val fresh = db.countSince(ContentType.SERIES, sIds, f, since)
+        vodShelf(
+            ContentType.SERIES, "home:episodes", "Nouveaux épisodes",
+            { if (fresh > 0) "${unit(ContentType.SERIES, fresh)} mises à jour depuis hier" else "Les séries mises à jour en dernier" },
+            sIds, sLang, f,
+        )?.let { out += it }
+        if (Lang.TR in langs && langs.size > 1) {
+            vodShelf(
+                ContentType.SERIES, "home:series:tr", langTitle(ContentType.SERIES, Lang.TR),
+                { langSubtitle(ContentType.SERIES, Lang.TR, it) }, Classifier.idsFor(series, Lang.TR), sLang, f,
+            )?.let { out += it }
+        }
+        for (lang in Lang.entries) {
+            if (lang !in langs) continue
+            vodShelf(
+                ContentType.MOVIE, "home:movies:${lang.key}", langTitle(ContentType.MOVIE, lang),
+                { langSubtitle(ContentType.MOVIE, lang, it) }, Classifier.idsFor(movies, lang), mLang, f,
+            )?.let { out += it }
+        }
         val mine = myList()
-        HubData(
-            resume = continueWatching().firstOrNull(),
-            newMovie = db.groupTiles(ContentType.MOVIE, movieIds, f, 1).firstOrNull(),
-            newSeries = db.groupTiles(ContentType.SERIES, seriesIds, f, 1).firstOrNull(),
-            movieCount = db.groupCount(ContentType.MOVIE, movieIds, f),
-            seriesCount = db.groupCount(ContentType.SERIES, seriesIds, f),
-            channel = channel,
-            channelCount = db.channelCountInCats(liveIds, f),
-            myList = mine.take(1),
-            myListCount = mine.size + favChannels.size,
-        )
+        if (mine.isNotEmpty()) {
+            out += Shelf("home:mine", "Ma liste", Text.count(mine.size, "favori", "favoris"),
+                mine.map { TileItem(it, (if (it.type == ContentType.MOVIE) mLang else sLang)[it.categoryId]) })
+        }
+        val recent = recentChannels()
+        if (recent.isNotEmpty()) {
+            val lLang = langMap(index(ContentType.LIVE, f))
+            channelShelf("home:recent-live", "Chaînes récentes", { "Les dernières chaînes regardées" }, recent, lLang)?.let { out += it }
+        }
+        return out
+    }
+
+    private fun vodShelves(type: ContentType): List<Shelf> {
+        val f = filter
+        val langs = _langs.value
+        val infos = index(type, f)
+        val langOf = langMap(infos)
+        val ids = Classifier.idsFor(infos, langs)
+        val out = ArrayList<Shelf>()
+        val newest = if (type == ContentType.MOVIE) "Derniers ajouts" else "Nouveaux épisodes"
+        vodShelf(type, "${type.key}:new", newest, { "${unit(type, it)} dans tes langues" }, ids, langOf, f)?.let { out += it }
+        if (langs.size > 1) {
+            for (lang in listOf(Lang.FR, Lang.EN, Lang.TR)) {
+                if (lang !in langs) continue
+                vodShelf(type, "${type.key}:lang:${lang.key}", langTitle(type, lang), { langSubtitle(type, lang, it) },
+                    Classifier.idsFor(infos, lang), langOf, f)?.let { out += it }
+            }
+        }
+        val genreLangIds = infos.filter { it.lang in langs && (it.lang == Lang.FR || it.lang == Lang.EN) }.map { it.id }
+        for (g in Classifier.genreGroups(type, infos, langs)) {
+            vodShelf(type, "${type.key}:g:${g.key}", g.label, { unit(type, it) }, g.catIds, langOf, f,
+                g.itemGenreKeywords, genreLangIds)?.let { out += it }
+        }
+        if (Lang.OTHER in langs) {
+            for (g in Classifier.otherLanguageGroups(infos)) {
+                vodShelf(type, "${type.key}:${g.key}", g.label, { "Autre langue, ${unit(type, it)}" }, g.catIds, langOf, f)?.let { out += it }
+            }
+        }
+        return out
+    }
+
+    private suspend fun liveShelves(): List<Shelf> {
+        val f = filter
+        val langs = _langs.value
+        val infos = index(ContentType.LIVE, f)
+        val langOf = langMap(infos)
+        val out = ArrayList<Shelf>()
+        channelShelf("live:fav", "Mes chaînes", { unit(ContentType.LIVE, it) }, favoriteChannels(), langOf)?.let { out += it }
+        channelShelf("live:recent", "Regardées récemment", { "Les dernières chaînes ouvertes" }, recentChannels(), langOf)?.let { out += it }
+        for (g in Classifier.genreGroups(ContentType.LIVE, infos, langs)) {
+            channelShelf("live:g:${g.key}", g.label, { unit(ContentType.LIVE, it) }, db.channelsInCats(g.catIds, f), langOf)?.let { out += it }
+        }
+        if (Lang.TR in langs) {
+            channelShelf("live:tr", langTitle(ContentType.LIVE, Lang.TR), { unit(ContentType.LIVE, it) },
+                db.channelsInCats(Classifier.idsFor(infos, Lang.TR), f), langOf)?.let { out += it }
+        }
+        if (Lang.OTHER in langs) {
+            for (g in Classifier.otherLanguageGroups(infos)) {
+                channelShelf("live:${g.key}", g.label, { "Autre langue, ${unit(ContentType.LIVE, it)}" }, db.channelsInCats(g.catIds, f), langOf)?.let { out += it }
+            }
+        }
+        return out
+    }
+
+    private suspend fun mineShelves(): List<Shelf> {
+        val f = filter
+        val out = ArrayList<Shelf>()
+        val resume = continueWatching()
+        if (resume.isNotEmpty()) {
+            out += Shelf("mine:resume", "Reprendre", Text.count(resume.size, "programme en cours", "programmes en cours"), resume.map { ResumeItem(it) })
+        }
+        val mLang = langMap(index(ContentType.MOVIE, f))
+        val sLang = langMap(index(ContentType.SERIES, f))
+        val lLang = langMap(index(ContentType.LIVE, f))
+        val movies = db.tilesByIds(ContentType.MOVIE, favoriteOrder(ContentType.MOVIE), f)
+        if (movies.isNotEmpty()) out += Shelf("mine:movies", "Films", unit(ContentType.MOVIE, movies.size), movies.map { TileItem(it, mLang[it.categoryId]) })
+        val series = db.tilesByIds(ContentType.SERIES, favoriteOrder(ContentType.SERIES), f)
+        if (series.isNotEmpty()) out += Shelf("mine:series", "Séries", unit(ContentType.SERIES, series.size), series.map { TileItem(it, sLang[it.categoryId]) })
+        channelShelf("mine:live", "Chaînes", { unit(ContentType.LIVE, it) }, favoriteChannels(), lLang)?.let { out += it }
+        return out
+    }
+
+    /** Contenu complet d'une étagère « Tout voir ». */
+    suspend fun gridTiles(t: GridTarget): List<Tile> = withContext(Dispatchers.IO) {
+        db.groupTiles(t.type, t.catIds, filter, 5000, t.genreLike, t.langCatIds)
     }
 
     suspend fun saveProfile(p: Profile): Long = withContext(Dispatchers.IO) {
@@ -304,6 +449,8 @@ class Repo(
     suspend fun tile(type: ContentType, id: Int): Tile? = withContext(Dispatchers.IO) { db.tile(type, id) }
 
     suspend fun channelsIn(categoryId: String): List<Channel> = withContext(Dispatchers.IO) { db.channelsIn(categoryId, filter) }
+
+    suspend fun channelsInCats(ids: List<String>): List<Channel> = withContext(Dispatchers.IO) { db.channelsInCats(ids, filter) }
 
     suspend fun allChannels(): List<Channel> = withContext(Dispatchers.IO) { db.allChannels(filter) }
 

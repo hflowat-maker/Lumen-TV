@@ -4,26 +4,32 @@ import androidx.compose.runtime.Immutable
 import java.text.Normalizer
 import java.util.Locale
 
-/** Choix de langue affiché en haut de l'écran. */
-enum class LangMode(val key: String, val label: String) {
-    FR("fr", "Français"),
-    EN("en", "English"),
-    BOTH("both", "Les deux"),
-    OTHER("other", "Autres langues");
-
-    fun accepts(lang: Lang): Boolean = when (this) {
-        FR -> lang == Lang.FR
-        EN -> lang == Lang.EN
-        BOTH -> lang == Lang.FR || lang == Lang.EN
-        OTHER -> lang == Lang.OTHER
-    }
+/**
+ * Langues proposées en haut de l'écran. On peut en cocher plusieurs : seuls les contenus
+ * des langues cochées apparaissent dans l'accueil, les films, les séries et les chaînes.
+ */
+enum class Lang(val key: String, val label: String, val chip: String) {
+    FR("fr", "Français", "Français"),
+    EN("en", "English", "English"),
+    /** Films et séries turcs sous-titrés en arabe (catégories « تركي مترجم »). */
+    TR("tr", "Turc, sous-titré en arabe", "Turc VOST arabe"),
+    OTHER("other", "Autres langues", "Autres");
 
     companion object {
-        fun of(key: String?): LangMode = entries.firstOrNull { it.key == key } ?: BOTH
+        val DEFAULT: Set<Lang> = setOf(FR, EN)
+        val KIDS: Set<Lang> = setOf(FR)
+
+        fun decode(value: String?): Set<Lang>? {
+            if (value.isNullOrBlank()) return null
+            // Anciennes valeurs (bascule unique) : « both », « fr », « en », « other ».
+            if (value == "both") return DEFAULT
+            val set = value.split(',').mapNotNull { k -> entries.firstOrNull { it.key == k.trim() } }.toSet()
+            return set.ifEmpty { null }
+        }
+
+        fun encode(set: Set<Lang>): String = entries.filter { it in set }.joinToString(",") { it.key }
     }
 }
-
-enum class Lang { FR, EN, OTHER }
 
 /** Catégorie du fournisseur enrichie : langue détectée et regroupements. */
 @Immutable
@@ -32,7 +38,7 @@ data class CatInfo(
     val name: String,
     val count: Int,
     val lang: Lang,
-    /** Libellé de langue pour le mode « Autres langues » (Arabe, Allemand…). */
+    /** Libellé de la langue pour « Autres langues » (Arabe, Allemand…). */
     val otherLabel: String,
     val groups: Set<String>,
 )
@@ -60,7 +66,7 @@ object Classifier {
     private val FR_CODES = setOf("FR", "FRA", "FRE", "VF", "VFF", "VOSTFR", "BE", "CH", "QC", "LU", "MC")
     private val EN_CODES = setOf("EN", "ENG", "UK", "US", "USA", "GB", "IE", "AU", "AUS", "CA", "NZ")
 
-    private val prefix = Regex("^\\s*([A-Za-z]{2,5}(?:/[A-Za-z]{2,3})?)\\s*[|\\-:•]")
+    private val prefix = Regex("^\\s*[|\\[(]?\\s*([A-Za-z]{2,5}(?:/[A-Za-z]{2,3})?)\\s*[|\\-:•\\])]")
 
     private val OTHER_LABELS = linkedMapOf(
         "AR" to "Arabe", "KU" to "Kurde", "TR" to "Turc", "DE" to "Allemand", "AT" to "Allemand",
@@ -100,7 +106,23 @@ object Classifier {
     private fun words(upper: String): Set<String> =
         upper.split(Regex("[^A-Z0-9+]+")).filter { it.isNotEmpty() }.toSet()
 
+    // Turc sous-titré en arabe : « مسلسلات تركية مترجمة », « يعرض الآن تركي مترجم »…
+    // Les versions doublées (« مدبلج ») restent dans Arabe.
+    private val turkishAr = Regex("(?<!\\p{IsArabic})(ال)?ترك(ي|ية|يه|يا)?(?!\\p{IsArabic})")
+    private val subtitledAr = Regex("مترجم")
+    private val dubbedAr = Regex("مدبلج")
+    private val turkishLatin = Regex("\\b(TURK|TURKISH|TURKCE|TURC|TURQUE|TURQUES|TURCS|TR)\\b")
+    private val arabicSubLatin = Regex("\\b(VOSTAR|ARSUB|SUBAR|ARABIC SUB|AR SUB|SUB AR|ST AR|VOST AR|VOST ARABE|SOUS TITRE ARABE|ARABIC SUBTITLES?)\\b")
+
+    fun isTurkishArabicSub(name: String): Boolean {
+        if (dubbedAr.containsMatchIn(name)) return false
+        if (turkishAr.containsMatchIn(name) && subtitledAr.containsMatchIn(name)) return true
+        val up = plain(name)
+        return turkishLatin.containsMatchIn(up) && arabicSubLatin.containsMatchIn(up)
+    }
+
     fun language(name: String): Pair<Lang, String> {
+        if (isTurkishArabicSub(name)) return Lang.TR to "Turc VOST arabe"
         val code = prefix.find(name)?.groupValues?.get(1)?.uppercase(Locale.ROOT)
         if (code != null) {
             if (code in FR_CODES) return Lang.FR to "Français"
@@ -233,39 +255,35 @@ object Classifier {
         CatInfo(c.id, c.name, c.count, lang, label, groups)
     }
 
-    /** Puces pour un type de contenu et une langue. */
-    fun groupsFor(type: ContentType, infos: List<CatInfo>, mode: LangMode): List<Group> {
-        val inLang = infos.filter { mode.accepts(it.lang) }
-        if (inLang.isEmpty()) return emptyList()
-        val allIds = inLang.map { it.id }
-        val total = inLang.sumOf { it.count }
-
-        if (mode == LangMode.OTHER) {
-            // Autres langues : une puce par langue.
-            val byLabel = inLang.groupBy { it.otherLabel }
-                .entries.sortedByDescending { e -> e.value.sumOf { it.count } }
-            val langGroups = byLabel.map { (label, list) ->
-                Group("lang:$label", label, list.map { it.id }, list.sumOf { it.count })
-            }
-            return listOf(Group("all", "Tout", allIds, total)) + langGroups
-        }
-
+    /**
+     * Étagères de genre (films, séries) ou de thème (chaînes) pour les langues cochées.
+     * Les autres langues donnent une étagère par langue ([otherLanguageGroups]).
+     */
+    fun genreGroups(type: ContentType, infos: List<CatInfo>, langs: Set<Lang>): List<Group> {
+        val inLang = infos.filter { it.lang in langs && it.lang != Lang.OTHER && it.lang != Lang.TR }
         val order = if (type == ContentType.LIVE) liveOrder else vodOrder
         val labels = if (type == ContentType.LIVE) liveLabels else vodLabels
         val out = ArrayList<Group>()
         for (key in order) {
-            when (key) {
-                "new" -> out += Group("new", labels.getValue("new"), allIds, total)
-                "all" -> out += Group("all", if (type == ContentType.LIVE) "Toutes" else "Tout", allIds, total)
-                else -> {
-                    val list = inLang.filter { key in it.groups }
-                    val itemWords = if (type == ContentType.SERIES) seriesGenreWords[key].orEmpty() else emptyList()
-                    if (list.isNotEmpty() || itemWords.isNotEmpty()) {
-                        out += Group(key, labels[key] ?: key, list.map { it.id }, list.sumOf { it.count }, itemWords)
-                    }
-                }
+            if (key == "new" || key == "all") continue
+            val list = inLang.filter { key in it.groups }
+            val itemWords = if (type == ContentType.SERIES) seriesGenreWords[key].orEmpty() else emptyList()
+            if (list.isNotEmpty() || itemWords.isNotEmpty()) {
+                out += Group(key, labels[key] ?: key, list.map { it.id }, list.sumOf { it.count }, itemWords)
             }
         }
         return out
     }
+
+    /** Une étagère par langue « autre » (Arabe, Allemand…), la plus fournie d'abord. */
+    fun otherLanguageGroups(infos: List<CatInfo>): List<Group> =
+        infos.filter { it.lang == Lang.OTHER }
+            .groupBy { it.otherLabel }
+            .entries.sortedByDescending { e -> e.value.sumOf { it.count } }
+            .map { (label, list) -> Group("lang:$label", label, list.map { it.id }, list.sumOf { it.count }) }
+
+    /** Catégories d'une langue. */
+    fun idsFor(infos: List<CatInfo>, lang: Lang): List<String> = infos.filter { it.lang == lang }.map { it.id }
+
+    fun idsFor(infos: List<CatInfo>, langs: Set<Lang>): List<String> = infos.filter { it.lang in langs }.map { it.id }
 }

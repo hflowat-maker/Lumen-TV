@@ -105,4 +105,19 @@ object Text {
     fun rating(r: Double): String? = if (r > 0.05) String.format(Locale.FRANCE, "%.1f", r) else null
 
     fun initials(name: String): String = name.trim().take(1).uppercase()
+
+    /** « 2 418 films », « 1 série ». */
+    fun count(n: Int, one: String, many: String): String = "${number(n)} ${if (n <= 1) one else many}"
+
+    /** Nombre avec espace des milliers (2 418). */
+    fun number(n: Int): String {
+        val s = n.toString()
+        if (s.length <= 3) return s
+        val sb = StringBuilder()
+        s.forEachIndexed { i, c ->
+            if (i > 0 && (s.length - i) % 3 == 0) sb.append('\u202F')
+            sb.append(c)
+        }
+        return sb.toString()
+    }
 }

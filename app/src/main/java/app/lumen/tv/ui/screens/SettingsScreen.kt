@@ -34,6 +34,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Text
 import app.lumen.tv.BuildConfig
 import app.lumen.tv.data.Category
@@ -84,6 +85,8 @@ fun SettingsScreen(app: AppController) {
     var setPin by remember { mutableStateOf(false) }
     var confirmRemovePin by remember { mutableStateOf(false) }
     var editUa by remember { mutableStateOf(false) }
+    var langPanel by remember { mutableStateOf(false) }
+    val langs by repo.langs.collectAsState()
 
     LaunchedEffect(Unit) {
         repo.refreshAccountInfo()
@@ -98,7 +101,7 @@ fun SettingsScreen(app: AppController) {
         tick++
     }
 
-    val entries = remember(tick, sync.running, counts) {
+    val entries = remember(tick, sync.running, counts, langs) {
         val acc = prefs.account
         val exp = prefs.accountExp
         val status = prefs.accountStatus.ifBlank { "Actif" }
@@ -131,6 +134,14 @@ fun SettingsScreen(app: AppController) {
             counts?.let { (l, m, s) ->
                 add(SettingItem.Row("counts", "Contenu", "$l chaînes · $m films · $s séries") {})
             }
+
+            add(SettingItem.Header("Langues"))
+            add(
+                SettingItem.Row(
+                    "langs", "Langues affichées",
+                    app.lumen.tv.data.Lang.entries.filter { it in langs }.joinToString(", ") { it.chip },
+                ) { langPanel = true }
+            )
 
             add(SettingItem.Header("Lecture"))
             add(
@@ -181,7 +192,7 @@ fun SettingsScreen(app: AppController) {
 
     Row(Modifier.fillMaxSize().padding(horizontal = Safe.h, vertical = Safe.v)) {
         Column(Modifier.width(300.dp).padding(top = 20.dp, end = 40.dp)) {
-            Text("Réglages", style = T.hero, color = C.Text1)
+            Text("Réglages", style = T.shelf.copy(fontSize = 46.sp, lineHeight = 48.sp), color = C.Text1)
             Spacer(Modifier.height(12.dp))
             Text(
                 "Appui long sur OK sur une affiche ou une chaîne pour l'ajouter à Ma liste. " +
@@ -210,7 +221,7 @@ fun SettingsScreen(app: AppController) {
                 items(entries, key = { if (it is SettingItem.Row) it.key else "h:" + (it as SettingItem.Header).title }) { item ->
                     when (item) {
                         is SettingItem.Header -> Text(
-                            item.title.uppercase(), style = T.overline, color = C.Text3,
+                            item.title, style = T.overline.copy(fontSize = 12.sp), color = C.Gold,
                             modifier = Modifier.padding(start = 6.dp, top = 18.dp, bottom = 4.dp),
                         )
                         is SettingItem.Row -> SettingRow(
@@ -224,6 +235,9 @@ fun SettingsScreen(app: AppController) {
         }
     }
 
+    if (langPanel) {
+        LanguagePanel(app, onClose = { langPanel = false })
+    }
     if (confirmLogout) {
         ConfirmDialog(
             title = "Changer de compte ?",

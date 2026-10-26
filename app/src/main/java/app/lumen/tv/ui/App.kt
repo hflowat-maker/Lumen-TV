@@ -56,6 +56,8 @@ import androidx.tv.material3.Icon
 import androidx.tv.material3.Text
 import app.lumen.tv.CrashReport
 import app.lumen.tv.data.ContentType
+import app.lumen.tv.data.GridTarget
+import app.lumen.tv.data.Shelf
 import app.lumen.tv.ui.components.Modal
 import app.lumen.tv.ui.components.PillButton
 import app.lumen.tv.ui.components.safeRequest
@@ -72,13 +74,11 @@ import app.lumen.tv.ui.components.PinDialog
 import app.lumen.tv.ui.components.Safe
 import app.lumen.tv.ui.components.restoreFocusGroup
 import app.lumen.tv.ui.screens.GridScreen
-import app.lumen.tv.ui.screens.HubScreen
-import app.lumen.tv.ui.screens.SectionScreen
+import app.lumen.tv.ui.screens.GroupGridScreen
 import app.lumen.tv.ui.screens.KidCategoriesScreen
-import app.lumen.tv.ui.screens.LiveScreen
 import app.lumen.tv.ui.screens.LoginScreen
+import app.lumen.tv.ui.screens.MainScreen
 import app.lumen.tv.ui.screens.MovieDetailScreen
-import app.lumen.tv.ui.screens.MyListScreen
 import app.lumen.tv.ui.screens.ProfileEditScreen
 import app.lumen.tv.ui.screens.ProfilesScreen
 import app.lumen.tv.ui.screens.SearchScreen
@@ -95,13 +95,11 @@ sealed interface Screen {
     data class Profiles(val manage: Boolean = false) : Screen
     data class ProfileEdit(val id: Long) : Screen
     data object Hub : Screen
-    data class Section(val type: ContentType) : Screen
-    data object Live : Screen
-    data object MyList : Screen
     data object Search : Screen
     data class Movie(val tile: Tile) : Screen
     data class Series(val tile: Tile) : Screen
     data class Grid(val type: ContentType, val categoryId: String, val title: String) : Screen
+    data class GroupGrid(val target: GridTarget) : Screen
     data class Player(val request: PlayRequest) : Screen
     data object Settings : Screen
     data object KidCategories : Screen
@@ -110,6 +108,9 @@ sealed interface Screen {
 @Stable
 class AppController(val repo: Repo, val prefs: Prefs) {
     val stack = mutableStateListOf<Screen>(Screen.Splash)
+
+    /** Étagères déjà calculées, affichées tout de suite au retour sur l'écran principal. */
+    val shelfCache = HashMap<String, List<Shelf>>()
 
     fun push(s: Screen) {
         stack.add(s)
@@ -161,7 +162,7 @@ fun AppRoot(app: AppController) {
     val context = LocalContext.current
     var crash by remember { mutableStateOf(CrashReport.read(context)) }
 
-    Box(Modifier.fillMaxSize().background(C.Bg)) {
+    Box(Modifier.fillMaxSize().background(C.backdrop)) {
         holder.SaveableStateProvider(stateKey) {
             when (screen) {
                 Screen.Splash -> Splash(app)
@@ -169,14 +170,12 @@ fun AppRoot(app: AppController) {
                 Screen.Sync -> SyncScreen(app)
                 is Screen.Profiles -> ProfilesScreen(app, screen.manage)
                 is Screen.ProfileEdit -> ProfileEditScreen(app, screen.id)
-                Screen.Hub -> HubScreen(app)
-                is Screen.Section -> SectionScreen(app, screen.type)
-                Screen.Live -> LiveScreen(app)
-                Screen.MyList -> MyListScreen(app)
+                Screen.Hub -> MainScreen(app)
                 Screen.Search -> SearchScreen(app)
                 is Screen.Movie -> MovieDetailScreen(app, screen.tile)
                 is Screen.Series -> SeriesDetailScreen(app, screen.tile)
                 is Screen.Grid -> GridScreen(app, screen.type, screen.categoryId, screen.title)
+                is Screen.GroupGrid -> GroupGridScreen(app, screen.target)
                 is Screen.Player -> key(screen.request) { PlayerScreen(app, screen.request) }
                 Screen.Settings -> SettingsScreen(app)
                 Screen.KidCategories -> KidCategoriesScreen(app)
@@ -219,9 +218,7 @@ private fun CrashDialog(report: String, onClose: () -> Unit) {
 private fun Splash(app: AppController) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(18.dp).clip(CircleShape).background(C.Gold))
-            Spacer(Modifier.width(14.dp))
-            Text("Lumen", style = T.hero, color = C.Text1)
+            Text("Lumen", style = T.shelf, color = C.Gold)
         }
     }
     LaunchedEffect(Unit) {

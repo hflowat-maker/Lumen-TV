@@ -1032,7 +1032,7 @@ private fun TrackPanel(
                         modifier = (if (i == selectedIndex) Modifier.focusRequester(firstFr) else Modifier).fillMaxWidth().height(56.dp),
                         shape = RoundedCornerShape(12.dp),
                         container = if (opt.selected) Pal.GoldSoft else Color.Transparent,
-                        focusedContainer = Color.White,
+                        focusedContainer = Pal.Focus,
                         contentColor = Color.White,
                         focusedContentColor = Pal.Bg,
                     ) {
@@ -1096,7 +1096,7 @@ private fun PanelChannelRow(app: AppController, channel: Channel, isCurrent: Boo
         modifier = modifier.fillMaxWidth().height(58.dp),
         shape = RoundedCornerShape(12.dp),
         container = if (isCurrent) Pal.GoldSoft else Color.Transparent,
-        focusedContainer = Color.White,
+        focusedContainer = Pal.Focus,
         contentColor = Color.White,
         focusedContentColor = Pal.Bg,
     ) {

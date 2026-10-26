@@ -34,6 +34,9 @@ import app.lumen.tv.safely
 import app.lumen.tv.data.ContentType
 import app.lumen.tv.data.ProgressKind
 import app.lumen.tv.data.Tile
+import app.lumen.tv.data.GridTarget
+import app.lumen.tv.data.Text as Txt
+import androidx.compose.ui.unit.sp
 import app.lumen.tv.ui.AppController
 import app.lumen.tv.ui.components.CardSize
 import app.lumen.tv.ui.components.ChannelTile
@@ -47,9 +50,32 @@ import app.lumen.tv.ui.components.remembered
 import app.lumen.tv.ui.theme.C
 import app.lumen.tv.ui.theme.T
 
+/** Grille complète d'une étagère (« Tout voir »). */
+@Composable
+fun GroupGridScreen(app: AppController, target: GridTarget) {
+    GridContent(app, target.title, target.type, target.key) {
+        if (target.type == ContentType.LIVE) null to (app.repo.channelsInCats(target.catIds))
+        else app.repo.gridTiles(target) to null
+    }
+}
+
 /** Grille complète d'une catégorie. */
 @Composable
 fun GridScreen(app: AppController, type: ContentType, categoryId: String, title: String) {
+    GridContent(app, title, type, "$type:$categoryId") {
+        if (type == ContentType.LIVE) null to app.repo.channelsIn(categoryId)
+        else app.repo.tilesIn(type, categoryId) to null
+    }
+}
+
+@Composable
+private fun GridContent(
+    app: AppController,
+    title: String,
+    type: ContentType,
+    key: String,
+    load: suspend () -> Pair<List<Tile>?, List<Channel>?>,
+) {
     val memory = rememberFocusMemory()
     val context = LocalContext.current
     val favorites by app.repo.favorites.collectAsState()
@@ -58,18 +84,22 @@ fun GridScreen(app: AppController, type: ContentType, categoryId: String, title:
     var channels by remember { mutableStateOf<List<Channel>?>(null) }
     val gridState = rememberLazyGridState()
 
-    LaunchedEffect(type, categoryId) {
-        if (type == ContentType.LIVE) channels = safely("grille") { app.repo.channelsIn(categoryId) } ?: emptyList()
-        else tiles = safely("grille") { app.repo.tilesIn(type, categoryId) } ?: emptyList()
+    LaunchedEffect(key) {
+        val r = safely("grille") { load() }
+        tiles = r?.first ?: if (type != ContentType.LIVE) emptyList() else null
+        channels = r?.second ?: if (type == ContentType.LIVE) emptyList() else null
     }
 
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.padding(start = Safe.h, top = Safe.v, bottom = 12.dp), verticalAlignment = Alignment.Bottom) {
-            Text(title, style = T.display, color = C.Text1)
+            Text(title, style = T.shelf.copy(fontSize = 46.sp, lineHeight = 48.sp), color = C.Text1, maxLines = 1)
             val n = tiles?.size ?: channels?.size
             if (n != null) {
-                Spacer(Modifier.width(12.dp))
-                Text("$n titres", style = T.meta, color = C.Text3, modifier = Modifier.padding(bottom = 4.dp))
+                Spacer(Modifier.width(14.dp))
+                Text(
+                    if (type == ContentType.LIVE) Txt.count(n, "chaîne", "chaînes") else Txt.count(n, "titre", "titres"),
+                    style = T.meta, color = C.Text2, modifier = Modifier.padding(bottom = 8.dp),
+                )
             }
         }
         val t = tiles

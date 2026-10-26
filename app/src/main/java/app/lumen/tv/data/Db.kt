@@ -350,6 +350,16 @@ class Db(context: Context) : SQLiteOpenHelper(context, "lumen.db", null, 1) {
         }
     }
 
+    /** Éléments ajoutés (films) ou mis à jour (séries) depuis [since] (secondes). */
+    fun countSince(type: ContentType, catIds: Collection<String>, f: ContentFilter, since: Long): Int {
+        if (catIds.isEmpty()) return 0
+        val col = if (type == ContentType.MOVIE) "added" else "modified"
+        return readableDatabase.rawQuery(
+            "SELECT COUNT(*) FROM ${table(type)} WHERE cat IN (${inList(catIds)}) AND $col >= ? AND ${catClause(type, f)}",
+            arrayOf(since.toString()),
+        ).use { if (it.moveToFirst()) it.getInt(0) else 0 }
+    }
+
     fun channelsInCats(catIds: Collection<String>, f: ContentFilter): List<Channel> {
         if (catIds.isEmpty()) return emptyList()
         return channels(

@@ -39,6 +39,7 @@ import androidx.tv.material3.Text
 import app.lumen.tv.BuildConfig
 import app.lumen.tv.data.Category
 import app.lumen.tv.data.ContentType
+import app.lumen.tv.data.Lang
 import app.lumen.tv.data.Prefs
 import app.lumen.tv.data.Text as Txt
 import app.lumen.tv.ui.AppController
@@ -139,7 +140,7 @@ fun SettingsScreen(app: AppController) {
             add(
                 SettingItem.Row(
                     "langs", "Langues affichées",
-                    app.lumen.tv.data.Lang.entries.filter { it in langs }.joinToString(", ") { it.chip },
+                    Lang.entries.filter { it in langs }.joinToString(", ") { it.chip },
                 ) { langPanel = true }
             )
 

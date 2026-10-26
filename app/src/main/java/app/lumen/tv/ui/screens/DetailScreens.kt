@@ -49,6 +49,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Text
 import app.lumen.tv.data.ContentType
 import app.lumen.tv.data.Episode
@@ -139,7 +140,7 @@ fun MovieDetailScreen(app: AppController, tile: Tile) {
         DetailBackdrop(i?.backdrop ?: tile.backdrop ?: i?.poster ?: tile.image)
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
             Column(Modifier.padding(start = Safe.h, top = Safe.v * 2.2f).width(600.dp)) {
-                Text(tile.title, style = T.hero.copy(fontSize = T.hero.fontSize * 1.1f), color = C.Text1, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(tile.title, style = T.hero.copy(fontSize = 46.sp, lineHeight = 48.sp), color = C.Text1, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Spacer(Modifier.height(12.dp))
                 MetaLine(
                     listOf(i?.year ?: tile.year, i?.durationSecs?.let { Txt.durationLabel(it) }, i?.genre),
@@ -259,7 +260,7 @@ fun SeriesDetailScreen(app: AppController, tile: Tile) {
         DetailBackdrop(i?.backdrop ?: tile.backdrop ?: tile.image ?: i?.cover)
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
             Column(Modifier.padding(start = Safe.h, top = Safe.v * 2.2f).width(600.dp)) {
-                Text(tile.title, style = T.hero.copy(fontSize = T.hero.fontSize * 1.1f), color = C.Text1, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(tile.title, style = T.hero.copy(fontSize = 46.sp, lineHeight = 48.sp), color = C.Text1, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Spacer(Modifier.height(12.dp))
                 val seasonsLabel = i?.seasons?.size?.let { if (it > 1) "$it saisons" else "1 saison" }
                 MetaLine(listOf(i?.year ?: tile.year, seasonsLabel, i?.genre ?: tile.genre), rating = Txt.rating(if ((i?.rating ?: 0.0) > 0) i!!.rating else tile.rating))

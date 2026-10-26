@@ -37,9 +37,9 @@ data class ResumeItem(val progress: WatchProgress) : ShelfItem {
     override val key: String get() = "resume:${progress.key}"
 }
 
-/** Chaîne en direct ; [zapList] sert au zapping depuis le lecteur. */
+/** Chaîne en direct (le zapping du lecteur reprend les chaînes de son étagère). */
 @Immutable
-data class ChannelItem(val channel: Channel, val lang: Lang?, val zapList: List<Channel>) : ShelfItem {
+data class ChannelItem(val channel: Channel, val lang: Lang?) : ShelfItem {
     override val key: String get() = "live:${channel.id}"
 }
 

@@ -58,6 +58,7 @@ import app.lumen.tv.CrashReport
 import app.lumen.tv.data.ContentType
 import app.lumen.tv.data.GridTarget
 import app.lumen.tv.data.Shelf
+import app.lumen.tv.ui.components.LumenLogo
 import app.lumen.tv.ui.components.Modal
 import app.lumen.tv.ui.components.PillButton
 import app.lumen.tv.ui.components.safeRequest
@@ -219,7 +220,7 @@ private fun CrashDialog(report: String, onClose: () -> Unit) {
 private fun Splash(app: AppController) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Lumen", style = T.shelf, color = C.Gold)
+            LumenLogo(markSize = 96.dp, textSize = 72.sp)
         }
     }
     LaunchedEffect(Unit) {

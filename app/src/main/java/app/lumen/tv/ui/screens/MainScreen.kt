@@ -86,6 +86,7 @@ import app.lumen.tv.ui.Screen
 import app.lumen.tv.ui.components.Avatar
 import app.lumen.tv.ui.components.Clickable
 import app.lumen.tv.ui.components.LangFlag
+import app.lumen.tv.ui.components.LumenMark
 import app.lumen.tv.ui.components.PinDialog
 import app.lumen.tv.ui.components.Safe
 import app.lumen.tv.ui.components.Spinner
@@ -282,8 +283,8 @@ private fun TopBar(
             },
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text("Lumen", style = T.logo, color = C.Gold)
-        Spacer(Modifier.width(22.dp))
+        LumenMark(28.dp)
+        Spacer(Modifier.width(18.dp))
         Row(
             horizontalArrangement = Arrangement.spacedBy(4.dp),
             verticalAlignment = Alignment.CenterVertically,

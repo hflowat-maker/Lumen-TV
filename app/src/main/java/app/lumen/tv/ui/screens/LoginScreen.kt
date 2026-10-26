@@ -37,12 +37,14 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Icon
 import androidx.tv.material3.Text
 import app.lumen.tv.data.Account
 import app.lumen.tv.ui.AppController
 import app.lumen.tv.ui.Screen
 import app.lumen.tv.ui.components.PillButton
+import app.lumen.tv.ui.components.LumenLogo
 import app.lumen.tv.ui.components.Safe
 import app.lumen.tv.ui.components.Spinner
 import app.lumen.tv.ui.components.TvTextField
@@ -113,11 +115,7 @@ fun LoginScreen(app: AppController) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f).padding(end = 56.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(14.dp).clip(CircleShape).background(C.Gold))
-                Spacer(Modifier.width(10.dp))
-                Text("Lumen", style = T.title, color = C.Text1)
-            }
+            LumenLogo(markSize = 30.dp, textSize = 24.sp)
             Spacer(Modifier.height(28.dp))
             Text("Connectez votre service", style = T.hero, color = C.Text1)
             Spacer(Modifier.height(14.dp))

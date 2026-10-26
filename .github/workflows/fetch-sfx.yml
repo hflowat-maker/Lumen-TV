@@ -1,0 +1,28 @@
+name: Fetch sound assets
+
+on:
+  push:
+    branches: [sfx-fetch]
+
+permissions:
+  contents: write
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download and publish
+        shell: bash
+        run: |
+          mkdir out && cd out
+          curl -sSL -o sfx1.mp3 "https://storage.googleapis.com/xi-backend/database/workspace/7afc8ebf983940f2987d767a2601eb0d/content_generation/vPF8dRohw40exh02jW16/WbnEe1Rat73GgeRpyuhJ/content.mp3?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=xi-backend-prod%40xi-labs.iam.gserviceaccount.com%2F20261026%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20261026T143021Z&X-Goog-Expires=7200&X-Goog-SignedHeaders=host&X-Goog-Signature=23ed5b8a9e41ad6c10d984e79b00a71139baa3d87731aeb5f28393aef0f336ccaf81742fa55739d5c540c5227de56a95b54a800354c0984979a5437391ab52d72a13105cc31b73f22851ff27fd5abae61efb7f8e22df5391d3f8ab6b0d7c1d7c45a6d90fe3d579655425979f5bc3390d3345556e53b0c3ad7049142283e9d4c43358a6988d4d3c8a26572f4a9c3acb0bab5899726698842911a7c222a29beb361081bb449d080005ab8e812a4ee45ec3cfdb7e4b8df74c52374302069f42314bb442602e01ddbd3ceed1f3c4a74785d645f00243a0f216bc335c8f18de9780d4a8f822fba1fa7167a6f18709e0806967722862e014c859cbb36a67fee69a1f9d"
+          curl -sSL -o sfx2.mp3 "https://storage.googleapis.com/xi-backend/database/workspace/7afc8ebf983940f2987d767a2601eb0d/content_generation/hK406JdjWvr4Of6ewxWL/daoPZHK6hbb0QOq1PCnf/content.mp3?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=xi-backend-prod%40xi-labs.iam.gserviceaccount.com%2F20261026%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20261026T143022Z&X-Goog-Expires=7200&X-Goog-SignedHeaders=host&X-Goog-Signature=ab9c9347b0fe19c81ba6ba3faec5b24180fa56391012b6b78ce178c592f40180a28009c1e12e51b802a64e43af6ca3acd0403d9e3c5db6f0166ed6eb1d69d1ad0190395d04f9abe1c526ceed93133cb1383efd334487ba840ae24c617394b3825e9d7fc8f319b4cd11c007177c5bea96c87c03ddaa7db76acfa51e23a47efb601f33216f2058db3c1e8ff3e6b3bfb7d2fe6bfbc3bce4c0e7913bf0e6b55fb15c263df475e12029fcc213f2be935b768db46a4f7d69ed2b633a45d04c2d029b787c189d01422ac32abe60f2f0e173c10349bc58aebdc335726956b4cc35144c7d5a2a65dadf2568fea021360a4e0e3cceeda223be5717091674b2024e40ab27da"
+          curl -sSL -o sfx3.mp3 "https://storage.googleapis.com/xi-backend/database/workspace/7afc8ebf983940f2987d767a2601eb0d/content_generation/vJRZLvX161VVPsyKTJik/YQIX4lVJQL7tQ86KOJJd/content.mp3?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=xi-backend-prod%40xi-labs.iam.gserviceaccount.com%2F20261026%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20261026T143022Z&X-Goog-Expires=7200&X-Goog-SignedHeaders=host&X-Goog-Signature=29d5f71f5667581c9b6b5ed565a5af9fcb1f0e5c155804051b5cfa169070031c39d548107b24f45b8f8adc005e2afc1fef132e292744aafe369ec4de14292b8de33be0886725a15d4041d44a577437e1db8b9c095b1d0742fbae231f6213bdd1fad6465d15d261109da3264627696f210d790970618b520223cbeef25f639ec97e090cf22a21925a74cfb1d4993c76fad03eafe3838b721d53d7e6daccf8781656c26bdeb473b2ff70701fd84e9b277621190f14603ae8397ff6b56f669f8700bd889fc9307fc31d42bd2242edfb61e9d7fa50b77de477f7e768672d580613cd1ff5c02b718ee0afd54e81c30b86f981bc9aa1650de686ef5f33cded1c877083"
+          ls -la
+          git init -q
+          git config user.name "lumen-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git checkout -q -b sfx-files
+          git add -A
+          git commit -q -m "Sons générés"
+          git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" sfx-files

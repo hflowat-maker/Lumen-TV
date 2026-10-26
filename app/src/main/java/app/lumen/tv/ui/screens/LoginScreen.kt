@@ -98,7 +98,7 @@ fun LoginScreen(app: AppController) {
         scope.launch {
             try {
                 app.repo.login(acc)
-                app.reset(Screen.Sync)
+                app.reset(Screen.Splash)
             } catch (e: Exception) {
                 error = e.message ?: "Connexion impossible"
             } finally {

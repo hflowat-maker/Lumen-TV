@@ -53,6 +53,11 @@ class Prefs(context: Context) {
         get() = sp.getBoolean("auto_next", true)
         set(v) = sp.edit().putBoolean("auto_next", v).apply()
 
+    /** Son court pendant l'animation d'ouverture. */
+    var introSound: Boolean
+        get() = sp.getBoolean("intro_sound", true)
+        set(v) = sp.edit().putBoolean("intro_sound", v).apply()
+
     /** 0 = adapté, 1 = remplir (zoom), 2 = étiré */
     var resizeMode: Int
         get() = sp.getInt("resize", 0)

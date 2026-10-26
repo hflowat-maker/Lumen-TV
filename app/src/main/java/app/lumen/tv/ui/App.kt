@@ -77,6 +77,7 @@ import app.lumen.tv.ui.components.Safe
 import app.lumen.tv.ui.components.restoreFocusGroup
 import app.lumen.tv.ui.screens.GridScreen
 import app.lumen.tv.ui.screens.GroupGridScreen
+import app.lumen.tv.ui.screens.IntroScreen
 import app.lumen.tv.ui.screens.KidCategoriesScreen
 import app.lumen.tv.ui.screens.LoginScreen
 import app.lumen.tv.ui.screens.MainScreen
@@ -167,7 +168,7 @@ fun AppRoot(app: AppController) {
     Box(Modifier.fillMaxSize().background(C.backdrop)) {
         holder.SaveableStateProvider(stateKey) {
             when (screen) {
-                Screen.Splash -> Splash(app)
+                Screen.Splash -> IntroScreen(app)
                 Screen.Login -> LoginScreen(app)
                 Screen.Sync -> SyncScreen(app)
                 is Screen.Profiles -> ProfilesScreen(app, screen.manage)
@@ -214,25 +215,4 @@ private fun CrashDialog(report: String, onClose: () -> Unit) {
         }
     }
     LaunchedEffect(Unit) { fr.safeRequest(100) }
-}
-
-@Composable
-private fun Splash(app: AppController) {
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            LumenLogo(markSize = 96.dp, textSize = 72.sp)
-        }
-    }
-    LaunchedEffect(Unit) {
-        val repo = app.repo
-        when {
-            repo.account == null -> app.reset(Screen.Login)
-            !repo.hasCatalog() -> app.reset(Screen.Sync)
-            else -> {
-                app.reset(Screen.Profiles())
-                repo.refreshAccountInBackground()
-                if (repo.catalogIsStale()) repo.syncInBackground()
-            }
-        }
-    }
 }

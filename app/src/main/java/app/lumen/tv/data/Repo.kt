@@ -120,6 +120,9 @@ class Repo(
         syncMutex.withLock { doSync() }
     }
 
+    /** Lance la mise à jour du catalogue ; elle continue même si l'écran qui l'a lancée se ferme. */
+    fun startSync(): kotlinx.coroutines.Deferred<Result<Unit>> = scope.async { runCatching { sync() } }
+
     private suspend fun doSync() {
         val acc = requireAccount()
         _sync.value = SyncProgress(running = true)

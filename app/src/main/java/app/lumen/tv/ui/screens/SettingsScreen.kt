@@ -154,6 +154,10 @@ fun SettingsScreen(app: AppController) {
                     changed()
                 }
             )
+            add(SettingItem.Row("introsound", "Son à l'ouverture de l'appli", toggle = prefs.introSound) {
+                prefs.introSound = !prefs.introSound
+                changed()
+            })
             add(SettingItem.Row("autonext", "Épisode suivant automatique", toggle = prefs.autoNextEpisode) {
                 prefs.autoNextEpisode = !prefs.autoNextEpisode
                 changed()

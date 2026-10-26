@@ -202,16 +202,8 @@ fun IntroScreen(app: AppController) {
     Box(
         Modifier
             .fillMaxSize()
-            .drawBehind {
-                val o = outro.value
-                // Fond noir ; il prend les couleurs de l'appli pendant l'envol du logo.
-                drawRect(
-                    Brush.linearGradient(
-                        listOf(lerp(Color.Black, C.BgGlow, o), lerp(Color.Black, C.Bg, o), lerp(Color.Black, C.BgDeep, o)),
-                        start = Offset.Zero, end = Offset(size.width, size.height),
-                    )
-                )
-            }
+            // Même fond bordeaux que le reste de l'appli : l'envol du logo enchaîne sans changement de couleur.
+            .background(C.backdrop)
             .focusRequester(rootFr)
             .onPreviewKeyEvent { ev ->
                 val ok = ev.key == Key.DirectionCenter || ev.key == Key.Enter || ev.key == Key.NumPadEnter

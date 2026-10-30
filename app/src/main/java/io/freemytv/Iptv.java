@@ -7,6 +7,13 @@ import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.util.Base64;
 
+import app.lumen.tv.data.CatInfo;
+import app.lumen.tv.data.Category;
+import app.lumen.tv.data.Classifier;
+import app.lumen.tv.data.ContentType;
+import app.lumen.tv.data.Group;
+import app.lumen.tv.data.Lang;
+
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -41,9 +48,9 @@ final class Iptv {
     static final class Channel {
         int id, num;
         String name, icon;
-        // What's on now (EPG), when known
+        // What's on now (EPG), when known, and when it was asked (0: not yet)
         String now;
-        long start, end;
+        long start, end, askedAt;
     }
 
     static final class Match {
@@ -274,29 +281,91 @@ final class Iptv {
 
     // MARK: - Live TV
 
-    /** Your channels: Lumen's favorites ("Ma liste") of the active profile, then the last ones watched. */
-    static List<Channel> channels(Context c, int max) {
-        List<Channel> out = new ArrayList<>();
+    /**
+     * A row of the Live TV tab: your list (favorites, then the last ones watched) or one of the themes Lumen shows in
+     * its own Live TV tab (Sport, Info, Cinéma & séries…: its Classifier, for the profile's languages), each made of the
+     * provider's categories.
+     */
+    static final class LiveGroup {
+        String key, label;
+        List<String> cats;      // the provider's categories; null for your list
+        List<Integer> ids;      // your list's channels, in order
+    }
+
+    /** The rows, in Lumen's order; empty when the catalog can't be read. */
+    static List<LiveGroup> liveGroups(Context c) {
+        List<LiveGroup> out = new ArrayList<>();
         SQLiteDatabase d = db(c);
         if (d == null) return out;
-        String profile = String.valueOf(prefs(c).getLong("profile", -1));
-        Set<Integer> ids = new LinkedHashSet<>();
         try {
-            try (Cursor cur = d.rawQuery("SELECT item FROM favorite WHERE profile=? AND type='live' ORDER BY added DESC", new String[] {profile})) {
-                while (cur.moveToNext()) ids.add(cur.getInt(0));
+            SharedPreferences p = prefs(c);
+            long profile = p.getLong("profile", -1);
+            boolean kid = isKid(d, profile);
+            List<Integer> mine = myList(d, profile);
+            if (!mine.isEmpty()) {
+                LiveGroup g = new LiveGroup();
+                g.key = "mine";
+                g.label = Ui.tr("My list");
+                g.ids = mine;
+                out.add(g);
             }
-            try (Cursor cur = d.rawQuery("SELECT item FROM recent_live WHERE profile=? ORDER BY watched DESC LIMIT 30", new String[] {profile})) {
-                while (cur.moveToNext()) ids.add(cur.getInt(0));
-            }
-            for (int id : ids) {
-                if (out.size() >= max) break;
-                try (Cursor cur = d.rawQuery("SELECT id, num, name, icon FROM live WHERE id=? AND (adult IS NULL OR adult=0)", new String[] {String.valueOf(id)})) {
-                    if (cur.moveToNext()) out.add(channel(cur));
+            List<Category> cats = new ArrayList<>();
+            String sql = "SELECT c.id, c.name, (SELECT COUNT(*) FROM live x WHERE x.cat = c.id), c.adult FROM categories c "
+                    + "WHERE c.type = 'live' AND " + catClause(p, kid, "c.id", false) + " ORDER BY c.pos";
+            try (Cursor cur = d.rawQuery(sql, null)) {
+                while (cur.moveToNext()) {
+                    int n = cur.getInt(2);
+                    if (n > 0) cats.add(new Category(ContentType.LIVE, cur.getString(0), cur.getString(1), n, cur.getInt(3) == 1));
                 }
             }
-            if (out.isEmpty()) {
-                // Nothing in "Ma liste" yet, nothing watched: the first channels of the playlist.
-                try (Cursor cur = d.rawQuery("SELECT id, num, name, icon FROM live WHERE (adult IS NULL OR adult=0) ORDER BY pos LIMIT " + max, null)) {
+            List<CatInfo> infos = Classifier.INSTANCE.classify(ContentType.LIVE, cats);
+            Set<Lang> langs = Lang.Companion.decode(p.getString("lang_" + profile, null));
+            if (langs == null) langs = kid ? Lang.Companion.getKIDS() : Lang.Companion.getDEFAULT();
+            for (Group g : Classifier.INSTANCE.genreGroups(ContentType.LIVE, infos, langs)) add(out, g.getKey(), g.getLabel(), g.getCatIds());
+            if (langs.contains(Lang.TR)) add(out, "tr", "Chaînes turques", Classifier.INSTANCE.idsFor(infos, Lang.TR));
+            if (langs.contains(Lang.OTHER)) {
+                for (Group g : Classifier.INSTANCE.otherLanguageGroups(infos)) add(out, g.getKey(), g.getLabel(), g.getCatIds());
+            }
+        } catch (RuntimeException e) {
+            AppLog.w("iptv: live categories unreadable: " + e.getMessage());
+            closeDb();
+        }
+        return out;
+    }
+
+    private static void add(List<LiveGroup> out, String key, String label, List<String> cats) {
+        if (cats == null || cats.isEmpty()) return;
+        LiveGroup g = new LiveGroup();
+        g.key = key;
+        g.label = label;
+        g.cats = cats;
+        out.add(g);
+    }
+
+    /** A row's channels (all of them; the guide and logos are fetched for the ones on screen). */
+    static List<Channel> channels(Context c, LiveGroup g) {
+        List<Channel> out = new ArrayList<>();
+        SQLiteDatabase d = db(c);
+        if (d == null || g == null) return out;
+        try {
+            SharedPreferences p = prefs(c);
+            String clause = catClause(p, isKid(d, p.getLong("profile", -1)), "cat", true);
+            if (g.ids != null) {
+                Map<Integer, Channel> byId = new HashMap<>();
+                StringBuilder in = new StringBuilder();
+                for (int id : g.ids) in.append(in.length() == 0 ? "" : ",").append(id);
+                if (in.length() == 0) return out;
+                try (Cursor cur = d.rawQuery("SELECT id, num, name, icon FROM live WHERE id IN (" + in + ") AND " + clause, null)) {
+                    while (cur.moveToNext()) {
+                        Channel ch = channel(cur);
+                        byId.put(ch.id, ch);
+                    }
+                }
+                for (int id : g.ids) if (byId.containsKey(id)) out.add(byId.get(id));
+            } else {
+                StringBuilder in = new StringBuilder();
+                for (String cat : g.cats) in.append(in.length() == 0 ? "" : ",").append('\'').append(cat.replace("'", "''")).append('\'');
+                try (Cursor cur = d.rawQuery("SELECT id, num, name, icon FROM live WHERE cat IN (" + in + ") AND " + clause + " ORDER BY pos", null)) {
                     while (cur.moveToNext()) out.add(channel(cur));
                 }
             }
@@ -305,6 +374,35 @@ final class Iptv {
             closeDb();
         }
         return out;
+    }
+
+    /** "Ma liste": the profile's favorite channels (latest first), then the last ones watched. */
+    private static List<Integer> myList(SQLiteDatabase d, long profile) {
+        String pid = String.valueOf(profile);
+        Set<Integer> ids = new LinkedHashSet<>();
+        try (Cursor cur = d.rawQuery("SELECT item FROM favorite WHERE profile=? AND type='live' ORDER BY added DESC", new String[] {pid})) {
+            while (cur.moveToNext()) ids.add(cur.getInt(0));
+        }
+        try (Cursor cur = d.rawQuery("SELECT item FROM recent_live WHERE profile=? ORDER BY watched DESC LIMIT 30", new String[] {pid})) {
+            while (cur.moveToNext()) ids.add(cur.getInt(0));
+        }
+        return new ArrayList<>(ids);
+    }
+
+    private static boolean isKid(SQLiteDatabase d, long profile) {
+        try (Cursor cur = d.rawQuery("SELECT kid FROM profile WHERE id=?", new String[] {String.valueOf(profile)})) {
+            return cur.moveToNext() && cur.getInt(0) == 1;
+        }
+    }
+
+    /** Lumen's filter (Db.catClause): a kid profile sees only its allowed categories; adult ones are hidden. */
+    private static String catClause(SharedPreferences p, boolean kid, String column, boolean channelRows) {
+        if (kid) return column + " IN (SELECT cat FROM kid_cat WHERE type='live' AND allowed=1)";
+        if (p.getBoolean("hide_adult", true)) {
+            return column + " NOT IN (SELECT id FROM categories WHERE type='live' AND adult=1)"
+                    + (channelRows ? " AND (adult IS NULL OR adult=0)" : "");
+        }
+        return "1=1";
     }
 
     private static Channel channel(Cursor cur) {

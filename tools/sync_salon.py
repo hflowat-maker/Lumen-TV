@@ -9,6 +9,9 @@ Salon's Java classes keep their package (io.freemytv); only what differs inside 
   - Salon's resources are referenced through Lumen's R class (app.lumen.tv.R);
   - its icon and banner are renamed (Lumen has its own), its styles and booleans get their own file names.
 The manifest entries are kept by hand in app/src/main/AndroidManifest.xml.
+
+Since the merge, Salon's code is edited here (app/src/main/java/io/freemytv): running this again overwrites those
+changes with the Free My TV checkout's. Only for taking a new Free My TV version, then re-applying Salon's changes.
 """
 import os
 import re

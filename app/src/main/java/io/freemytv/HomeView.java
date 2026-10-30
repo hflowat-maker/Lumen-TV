@@ -158,13 +158,20 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private List<Recs.Pick> cards = new ArrayList<>();
     private final Spring[] topFocus = new Spring[TABS + BUTTONS];
     private final RectF[] topRects = new RectF[TABS + BUTTONS];
-    // Live TV tab
+    // Live TV tab: the rows (your list, then Lumen's themes) as chips, and the selected row's channels below
+    private List<Iptv.LiveGroup> liveGroups = new ArrayList<>();
+    private final Map<String, List<Iptv.Channel>> liveRows = new HashMap<>();   // row key → its channels
+    private String liveGroup;           // the selected row
+    private boolean liveChips;          // focus on the chips (else on the channels)
+    private float chipShift;            // how far the chips are scrolled left
     private List<Iptv.Channel> live = new ArrayList<>();
     private final Map<String, Bitmap> liveLogos = new HashMap<>();
     private int liveIndex, liveFirst;
     private boolean liveLoading, iptvReady;
     private long liveAt;
-    private Paint lvTitle, lvName, lvNow, lvHint;
+    private Paint lvTitle, lvName, lvNow, lvHint, lvChip;
+    private static final ExecutorService GUIDE_LOADER = Executors.newFixedThreadPool(3);
+    private static final int LIVE_VISIBLE = 5;
     private final Spring[] cardFocus = new Spring[3];
     private final RectF[] cardRects = new RectF[3];
     private final List<HomeApps.Item> lightButtons = new ArrayList<>();
@@ -476,8 +483,13 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
     /** New strokes from the iPhone (or a cleared board): the frame shows up, updates, or goes away. */
     private void boardChanged() {
-        boardLayer.setVisibility(Board.get().isEmpty() ? INVISIBLE : VISIBLE);
+        boardLayer.setVisibility(boardOn() ? VISIBLE : INVISIBLE);
         boardLayer.invalidate();
+    }
+
+    /** The frame shows while it holds a drawing, except on the Live TV tab (the channels take that space). */
+    private boolean boardOn() {
+        return !Board.get().isEmpty() && tab != LIVE_TAB;
     }
 
     /** Starting state (Home pressed while the home screen is showing): first app focused, drawer and sheet closed. */
@@ -683,6 +695,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         lvName = Ui.text(Ui.semibold, 26 * k, 0xFFFFFFFF);
         lvNow = Ui.text(Ui.medium, 21 * k, 0xB3FFFFFF);
         lvHint = Ui.text(Ui.medium, 28 * k, 0xBFFFFFFF);
+        lvChip = Ui.text(Ui.semibold, 25 * k, 0xFFFFFFFF);
         cTitleText = null;
         makeDunes();
     }
@@ -818,7 +831,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         show(heroLayer, top, lift);
         boardLayer.setAlpha(top);
         boardLayer.setTranslationY(lift);
-        boardLayer.setVisibility(top > 0.002f && !Board.get().isEmpty() ? VISIBLE : INVISIBLE);
+        boardLayer.setVisibility(top > 0.002f && boardOn() ? VISIBLE : INVISIBLE);
         show(status, top, lift);
         show(platter, home, lift);
         show(tiles, home, lift);
@@ -1822,7 +1835,9 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         heroFocus.target = !sheetOpen && zone == Z_HERO ? 1 : 0;
         if (snap) heroFocus.snap(heroFocus.target);
         boolean topChanged = aim(topFocus, !sheetOpen && zone == Z_TOP ? topIndex : -1, snap);
-        heroChanged |= aim(cardFocus, !sheetOpen && zone == Z_CARDS ? cardIndex : -1, snap) | topChanged;
+        // Live TV: the channels row is spring 0 and the chips spring 1.
+        int cardsAt = zone != Z_CARDS ? -1 : tab == LIVE_TAB ? (liveChips ? 1 : 0) : cardIndex;
+        heroChanged |= aim(cardFocus, !sheetOpen ? cardsAt : -1, snap) | topChanged;
         statusChanged |= topChanged;
         tilesDirty |= snap || tilesChanged;
         statusDirty |= snap || statusChanged;
@@ -2283,6 +2298,14 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             it = lightButtons.get(topIndex - TABS);
             r = topRects[topIndex];
         } else if (zone == Z_CARDS && tab == LIVE_TAB) {
+            if (liveChips) {    // OK on a category: down to its channels
+                if (!live.isEmpty()) {
+                    liveChips = false;
+                    retarget(false);
+                    click.move();
+                }
+                return;
+            }
             // Live TV: the channel in Lumen's player (↑/↓ there go through this row)
             if (liveIndex >= live.size()) return;
             int[] ids = new int[live.size()];
@@ -2521,7 +2544,12 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             return;
         }
         for (int i = picksOn() ? 0 : TABS; i < TABS + lightButtons.size(); i++) out.add(a11yId(Z_TOP, i));
-        for (int i = 0; i < Math.min(3, cards.size()); i++) out.add(a11yId(Z_CARDS, i));
+        if (tab == LIVE_TAB) {
+            if (!liveGroups.isEmpty()) out.add(a11yId(Z_CARDS, 1));     // the categories, then the channel in focus
+            if (!live.isEmpty()) out.add(a11yId(Z_CARDS, 0));
+        } else {
+            for (int i = 0; i < Math.min(3, cards.size()); i++) out.add(a11yId(Z_CARDS, i));
+        }
         for (int i = 0; i < shelf.size(); i++) out.add(a11yId(Z_SHELF, i));
         for (int i = 0; i < drawerItems.size(); i++) out.add(a11yId(Z_DRAWER, i));
         if (drawerOpen && Prefs.weather()) out.add(a11yId(WIDGETS, 0));
@@ -2537,7 +2565,17 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             case Z_TOP:
                 if (i >= TABS) return label(lightButtons, i - TABS);
                 return Ui.trf("{name}, tab {i} of {n}", "name", tabs()[i], "i", i + 1, "n", TABS);
-            case Z_CARDS: return i < cards.size() ? pickText(cards.get(i)) : "";
+            case Z_CARDS:
+                if (tab == LIVE_TAB) {
+                    if (i == 1) {
+                        int at = groupAt(liveGroup);
+                        return at < 0 ? "" : Ui.trf("{name}, {i} of {n}", "name", liveGroups.get(at).label, "i", at + 1, "n", liveGroups.size());
+                    }
+                    if (liveIndex >= live.size()) return "";
+                    Iptv.Channel ch = live.get(liveIndex);
+                    return ch.now == null ? ch.name : ch.name + ", " + ch.now;
+                }
+                return i < cards.size() ? pickText(cards.get(i)) : "";
             case Z_SHELF:
                 if (reordering && i == shelfIndex) {
                     return Ui.trf("Moving {app}, position {n} of {total}",
@@ -2573,7 +2611,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 dy = (i < TABS ? heroLayer : status).getTranslationY();
                 break;
             case Z_CARDS:
-                if (i >= Math.min(3, cards.size())) return false;
+                if (tab == LIVE_TAB ? i > 1 : i >= Math.min(3, cards.size())) return false;
                 a11yRect.set(cardRects[i]);
                 dy = heroLayer.getTranslationY();
                 break;
@@ -2607,7 +2645,9 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         if (sheetOpen) return others.isEmpty() ? -1 : a11yId(GRID, gridIndex);
         switch (zone) {
             case Z_TOP: return a11yId(Z_TOP, topIndex);
-            case Z_CARDS: return cardIndex < cards.size() ? a11yId(Z_CARDS, cardIndex) : -1;
+            case Z_CARDS:
+                if (tab == LIVE_TAB) return a11yId(Z_CARDS, liveChips ? 1 : 0);
+                return cardIndex < cards.size() ? a11yId(Z_CARDS, cardIndex) : -1;
             case Z_SHELF: return shelf.isEmpty() ? -1 : a11yId(Z_SHELF, shelfIndex);
             case Z_DRAWER: return drawerItems.isEmpty() ? -1 : a11yId(Z_DRAWER, drawerIndex);
             case WIDGETS: return a11yId(WIDGETS, widgetIndex);
@@ -2661,6 +2701,11 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 if (i < TABS) selectTab(i);
                 break;
             case Z_CARDS:
+                if (tab == LIVE_TAB) {
+                    if (i > 1) return;
+                    liveChips = i == 1;
+                    break;
+                }
                 if (i >= cards.size()) return;
                 if (drawerOpen) closeDrawer();
                 cardIndex = i;
@@ -2777,6 +2822,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         tab = index;
         if (tab == LIVE_TAB) loadLive(false);
         updateCards();
+        boardChanged();
         heroDirty = true;
     }
 
@@ -2920,61 +2966,155 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         }
     }
 
-    /** Live TV: your channels from Lumen, with what's on now (names first, then the guide and logos as they come). */
+    /**
+     * Live TV: the rows (your list, then Lumen's themes for the profile's languages) and the selected row's channels,
+     * re-read every minute; the guide and logos only for the channels on screen (fetchGuide).
+     */
     private void loadLive(boolean force) {
         long now = SystemClock.uptimeMillis();
         if (liveLoading || (!force && liveAt != 0 && now - liveAt < 60_000)) return;
         liveLoading = true;
         final Context c = getContext().getApplicationContext();
-        final int logoPx = Math.max(64, Math.round(180 * k));
+        final String want = liveGroup;
         LIVE_LOADER.execute(() -> {
             final boolean ready = Iptv.ready(c);
-            final List<Iptv.Channel> list = ready ? Iptv.channels(c, 12) : new ArrayList<>();
+            final List<Iptv.LiveGroup> groups = ready ? Iptv.liveGroups(c) : new ArrayList<>();
+            Iptv.LiveGroup pick = groups.isEmpty() ? null : groups.get(0);
+            for (Iptv.LiveGroup g : groups) if (g.key.equals(want)) pick = g;
+            final Iptv.LiveGroup g = pick;
+            final List<Iptv.Channel> list = Iptv.channels(c, g);
             handler.post(() -> {
                 iptvReady = ready;
-                if (!list.isEmpty() || live.isEmpty()) live = list;
-                liveIndex = Math.min(liveIndex, Math.max(0, live.size() - 1));
-                if (zone == Z_CARDS && tab == LIVE_TAB && live.isEmpty()) {
+                liveLoading = false;
+                liveAt = SystemClock.uptimeMillis();
+                liveGroups = groups;
+                if (g == null) {
+                    liveGroup = null;
+                    live = new ArrayList<>();
+                } else {
+                    // Another row may have been picked meanwhile: this one is kept for when it comes back.
+                    List<Iptv.Channel> row = keepGuide(liveRows.get(g.key), list);
+                    liveRows.put(g.key, row);
+                    if (liveGroup == null || liveGroup.equals(g.key) || groupAt(liveGroup) < 0) showRow(g.key, row, g.key.equals(liveGroup));
+                }
+                if (zone == Z_CARDS && tab == LIVE_TAB && liveGroups.isEmpty()) {
                     zone = Z_SHELF;
                     retarget(false);
                 }
                 heroDirty = true;
                 wake();
             });
-            final Map<String, Bitmap> logos = new HashMap<>();
-            for (Iptv.Channel ch : list) {
-                Iptv.fillNow(c, ch);
-                Bitmap b = Iptv.logo(ch.icon, logoPx);
-                if (b != null) logos.put(ch.icon, b);
-            }
+        });
+    }
+
+    private int groupAt(String key) {
+        for (int i = 0; i < liveGroups.size(); i++) if (liveGroups.get(i).key.equals(key)) return i;
+        return -1;
+    }
+
+    /** ←/→ on the chips: the previous or next row, right away (its channels come from Lumen's catalog). */
+    private boolean moveGroup(int dx) {
+        int at = Math.max(0, groupAt(liveGroup)), next = Math.max(0, Math.min(liveGroups.size() - 1, at + dx));
+        if (next == at && liveGroup != null) return false;
+        final Iptv.LiveGroup g = liveGroups.get(next);
+        List<Iptv.Channel> known = liveRows.get(g.key);
+        showRow(g.key, known != null ? known : new ArrayList<>(), false);
+        final Context c = getContext().getApplicationContext();
+        LIVE_LOADER.execute(() -> {
+            final List<Iptv.Channel> list = Iptv.channels(c, g);
             handler.post(() -> {
-                liveLoading = false;
-                liveAt = SystemClock.uptimeMillis();
-                liveLogos.putAll(logos);
-                heroDirty = true;
-                wake();
+                List<Iptv.Channel> row = keepGuide(liveRows.get(g.key), list);
+                liveRows.put(g.key, row);
+                if (g.key.equals(liveGroup)) showRow(g.key, row, true);
             });
         });
+        heroDirty = true;
+        return true;
+    }
+
+    /** Shows a row's channels (`same`: the same row refreshed, the focused channel stays). */
+    private void showRow(String key, List<Iptv.Channel> row, boolean same) {
+        liveGroup = key;
+        live = row;
+        if (!same) {
+            liveIndex = 0;
+            liveFirst = 0;
+        }
+        liveIndex = Math.min(liveIndex, Math.max(0, live.size() - 1));
+        fetchGuide();
+        heroDirty = true;
+        wake();
+    }
+
+    /** A row read again: the channels keep what's on and their logos (no new request for them). */
+    private static List<Iptv.Channel> keepGuide(List<Iptv.Channel> old, List<Iptv.Channel> fresh) {
+        if (old == null || old.isEmpty()) return fresh;
+        Map<Integer, Iptv.Channel> byId = new HashMap<>();
+        for (Iptv.Channel ch : old) byId.put(ch.id, ch);
+        for (Iptv.Channel ch : fresh) {
+            Iptv.Channel o = byId.get(ch.id);
+            if (o == null) continue;
+            ch.now = o.now;
+            ch.start = o.start;
+            ch.end = o.end;
+            ch.askedAt = o.askedAt;
+        }
+        return fresh;
+    }
+
+    /** What's on and the logo of the channels on screen (and the next ones), asked again when the program has ended. */
+    private void fetchGuide() {
+        final Context c = getContext().getApplicationContext();
+        final int logoPx = Math.max(64, Math.round(180 * k));
+        long now = System.currentTimeMillis();
+        int from = Math.max(0, Math.min(liveFirst, liveIndex - LIVE_VISIBLE + 1));
+        for (int i = from; i < Math.min(live.size(), from + LIVE_VISIBLE + 2); i++) {
+            final Iptv.Channel ch = live.get(i);
+            boolean stale = ch.askedAt == 0 || (ch.end > 0 && ch.end < now) || (ch.now == null && now - ch.askedAt > 10 * 60_000);
+            if (!stale) continue;
+            ch.askedAt = now;
+            GUIDE_LOADER.execute(() -> {
+                Iptv.fillNow(c, ch);
+                final Bitmap logo = ch.icon == null || liveLogos.containsKey(ch.icon) ? null : Iptv.logo(ch.icon, logoPx);
+                handler.post(() -> {
+                    if (logo != null) liveLogos.put(ch.icon, logo);
+                    if (liveLogos.size() > 200) liveLogos.clear();
+                    heroDirty = true;
+                    wake();
+                });
+            });
+        }
     }
 
     private void drawLive(Canvas c) {
         float x0 = MARGIN * k;
-        c.drawText(Ui.tr("LIVE NOW"), x0, 300 * k, cKicker);
-        c.drawText(Ui.tr("Your channels"), x0 - Ui.leftBearing(lvTitle, "Y"), 372 * k, lvTitle);
+        String kicker = Ui.tr("LIVE NOW");
+        if (!live.isEmpty()) kicker += "  ·  " + (live.size() == 1 ? Ui.tr("1 channel") : Ui.trf("{n} channels", "n", live.size()));
+        c.drawText(kicker, x0, 262 * k, cKicker);
         String hint = null;
         if (!iptvReady && !liveLoading) hint = Ui.tr("Set up your IPTV playlist in Lumen first.");
-        else if (live.isEmpty()) hint = liveLoading ? Ui.tr("Loading your channels…")
-                : Ui.tr("Add channels to “My list” in Lumen (hold OK on a channel).");
+        else if (liveGroups.isEmpty()) hint = liveLoading ? Ui.tr("Loading your channels…") : Ui.tr("No channels in your playlist for this profile.");
         if (hint != null) {
-            c.drawText(hint, x0, 470 * k, lvHint);
+            c.drawText(hint, x0, 360 * k, lvHint);
             return;
         }
+        drawChips(c, x0, 292 * k);
         float cw = 300 * k, chH = 250 * k, gap = 28 * k, top = 420 * k, r0 = 22 * k;
-        int visible = 5;
+        if (live.isEmpty()) {
+            c.drawText(Ui.tr("Loading…"), x0, top + 60 * k, lvHint);
+            return;
+        }
+        int visible = LIVE_VISIBLE;
         if (liveIndex < liveFirst) liveFirst = liveIndex;
         if (liveIndex >= liveFirst + visible) liveFirst = liveIndex - visible + 1;
         float f = Ui.clamp(cardFocus[0].value);
         long now = System.currentTimeMillis();
+        if (liveFirst > 0) {     // more on the left: the right chevron, mirrored
+            c.save();
+            c.scale(-1, 1, x0 - 40 * k, top + chH / 2);
+            Symbols.draw(getContext(), c, "chevron_right", x0 - 40 * k, top + chH / 2, 34 * k, 0x99FFFFFF);
+            c.restore();
+        }
         for (int i = liveFirst; i < Math.min(live.size(), liveFirst + visible); i++) {
             Iptv.Channel ch = live.get(i);
             float x = x0 + (i - liveFirst) * (cw + gap);
@@ -3029,10 +3169,54 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         if (live.size() > liveFirst + visible) {
             Symbols.draw(getContext(), c, "chevron_right", x0 + visible * (cw + gap) - gap / 2 + 12 * k, top + chH / 2, 34 * k, 0x99FFFFFF);
         }
-        for (RectF r : cardRects) {     // for TalkBack and the way down to the shelf
-            float x = x0 + (liveIndex - liveFirst) * (cw + gap);
-            r.set(x, top, x + cw, top + chH);
+        float x = x0 + (liveIndex - liveFirst) * (cw + gap);
+        cardRects[0].set(x, top, x + cw, top + chH);    // for TalkBack and the way down to the shelf
+    }
+
+    /**
+     * The rows as pills, like Apple TV's categories: the selected one in light glass, the focused one white; the row
+     * slides so the selected one stays on screen.
+     */
+    private void drawChips(Canvas c, float x0, float y) {
+        float h = 54 * k, pad = 26 * k, gap = 12 * k, r = h / 2, right = CONTENT_R * k;
+        float f = Ui.clamp(cardFocus[1].value);
+        int at = Math.max(0, groupAt(liveGroup));
+        // Where the selected one is, without the shift
+        float sx = x0;
+        for (int i = 0; i < at; i++) sx += lvChip.measureText(liveGroups.get(i).label) + 2 * pad + gap;
+        float sw = lvChip.measureText(liveGroups.get(at).label) + 2 * pad;
+        if (sx - chipShift < x0) chipShift = sx - x0;
+        if (sx + sw - chipShift > right) chipShift = sx + sw - right;
+        chipShift = Math.max(0, chipShift);
+        c.save();
+        c.clipRect(x0 - 30 * k, y - 20 * k, right + 30 * k, y + h + 20 * k);
+        float cx = x0 - chipShift;
+        for (int i = 0; i < liveGroups.size() && cx < right + 30 * k; i++) {
+            String label = liveGroups.get(i).label;
+            float w = lvChip.measureText(label) + 2 * pad;
+            if (cx + w > x0 - 30 * k) {
+                boolean selected = i == at;
+                float ff = selected ? f : 0, s = 1 + 0.06f * ff;
+                cell.set(cx + w / 2 - w * s / 2, y + h / 2 - h * s / 2, cx + w / 2 + w * s / 2, y + h / 2 + h * s / 2);
+                if (selected) {
+                    if (ff > 0.01f) {
+                        tmp.set(cell);
+                        tmp.offset(0, 8 * k * ff);
+                        shadow.setColor(Ui.alpha(0xFF000000, 0.4f * ff));
+                        shadows.draw(c, tmp, r * s, SHADOW_BLUR * k, shadow);
+                    }
+                    fill.setShader(null);
+                    fill.setColor(blend(0x38FFFFFF, 0xFFFFFFFF, ff));
+                    c.drawRoundRect(cell, r * s, r * s, fill);
+                    cardRects[1].set(cell);
+                }
+                lvChip.setColor(selected ? blend(0xFFFFFFFF, 0xFF0B0A10, ff) : 0xA6FFFFFF);
+                c.drawText(label, cell.centerX() - lvChip.measureText(label) / 2, cell.centerY() + Ui.halfCap(lvChip), lvChip);
+            }
+            cx += w + gap;
         }
+        c.restore();
+        lvChip.setColor(0xFFFFFFFF);
     }
 
     /** Ardoise: the iPhone's drawing in a smoked-glass frame (its own layer, redrawn only when strokes arrive). */
@@ -3187,12 +3371,12 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 // Up from an empty shelf too: move()'s older zones (the hero, the corner capsule) aren't drawn any more.
                 if (dy >= 0) return false;
                 if (tab == LIVE_TAB && picksOn()) {
-                    if (live.isEmpty()) {
+                    if (liveGroups.isEmpty()) {
                         zone = Z_TOP;
                         topIndex = tab;
                     } else {
-                        zone = Z_CARDS;     // the channels row
-                        cardIndex = 0;
+                        zone = Z_CARDS;     // the channels row (the chips when the row is empty)
+                        liveChips = live.isEmpty();
                     }
                 } else if (cards.isEmpty() || cards.get(Math.min(cardIndex, cards.size() - 1)).pkg == null) {
                     zone = Z_TOP;
@@ -3203,11 +3387,28 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 }
                 break;
             case Z_CARDS:
+                if (tab == LIVE_TAB && liveChips) {
+                    if (dx != 0) {
+                        if (!moveGroup(dx)) return true;
+                    } else if (dy < 0) {
+                        zone = Z_TOP;
+                        topIndex = tab;
+                    } else if (!live.isEmpty()) {
+                        liveChips = false;
+                    } else {
+                        zone = Z_SHELF;
+                        if (!shelf.isEmpty()) shelfIndex = 0;
+                    }
+                    break;
+                }
                 if (dx != 0 && tab == LIVE_TAB) {
                     int next = Math.max(0, Math.min(live.size() - 1, liveIndex + dx));
                     if (next == liveIndex) return true;
                     liveIndex = next;
+                    fetchGuide();
                     heroDirty = true;
+                } else if (dy < 0 && tab == LIVE_TAB) {
+                    liveChips = true;   // up to the categories
                 } else if (dx != 0) {
                     // Cinéma: ←/→ feature the previous or next pick (round the three), and the photo follows.
                     int next = (cardIndex + dx + cards.size()) % Math.max(1, cards.size());
@@ -3231,8 +3432,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                     if (topIndex < TABS) selectTab(topIndex);   // like Apple TV tabs: focusing a tab selects it
                 } else if (dy > 0) {
                     if (tab == LIVE_TAB) {
-                        zone = live.isEmpty() ? Z_SHELF : Z_CARDS;
-                        cardIndex = 0;
+                        zone = liveGroups.isEmpty() ? Z_SHELF : Z_CARDS;
+                        liveChips = true;
                     } else if (cards.isEmpty() || cards.get(Math.min(cardIndex, cards.size() - 1)).pkg == null) {
                         zone = Z_SHELF;
                     } else {

@@ -7,11 +7,7 @@ import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.util.Base64;
 
-import app.lumen.tv.data.CatInfo;
-import app.lumen.tv.data.Category;
 import app.lumen.tv.data.Classifier;
-import app.lumen.tv.data.ContentType;
-import app.lumen.tv.data.Group;
 import app.lumen.tv.data.Lang;
 
 import org.json.JSONArray;
@@ -27,12 +23,14 @@ import java.net.URLEncoder;
 import java.text.Normalizer;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Salon's side of Lumen, the IPTV player in the same app: its catalog (lumen.db, written by Lumen in the main process)
@@ -281,51 +279,96 @@ final class Iptv {
 
     // MARK: - Live TV
 
-    /**
-     * A row of the Live TV tab: your list (favorites, then the last ones watched) or one of the themes Lumen shows in
-     * its own Live TV tab (Sport, Info, Cinéma & séries…: its Classifier, for the profile's languages), each made of the
-     * provider's categories.
-     */
+    /** A row of channels in the Live TV tab: a theme of one country (its provider categories), or your list. */
     static final class LiveGroup {
         String key, label;
         List<String> cats;      // the provider's categories; null for your list
         List<Integer> ids;      // your list's channels, in order
     }
 
-    /** The rows, in Lumen's order; empty when the catalog can't be read. */
-    static List<LiveGroup> liveGroups(Context c) {
-        List<LiveGroup> out = new ArrayList<>();
+    /** A country of the playlist (from its categories' names: "FR|", "MA -", "[DE]"…) and its themes. */
+    static final class Country {
+        String key, label;
+        int count;              // channels
+        final List<LiveGroup> groups = new ArrayList<>();
+    }
+
+    /**
+     * The Live TV tab's countries: your list first ("Ma liste": favorites, the last ones watched), then France, then
+     * every other country of the playlist, the biggest first, whatever languages the profile shows in Lumen. In each,
+     * Lumen's themes (Généralistes, Sport, Cinéma & séries, Info…).
+     */
+    static List<Country> liveCountries(Context c) {
+        List<Country> out = new ArrayList<>();
         SQLiteDatabase d = db(c);
         if (d == null) return out;
         try {
             SharedPreferences p = prefs(c);
             long profile = p.getLong("profile", -1);
             boolean kid = isKid(d, profile);
-            List<Integer> mine = myList(d, profile);
-            if (!mine.isEmpty()) {
-                LiveGroup g = new LiveGroup();
-                g.key = "mine";
-                g.label = Ui.tr("My list");
-                g.ids = mine;
-                out.add(g);
-            }
-            List<Category> cats = new ArrayList<>();
-            String sql = "SELECT c.id, c.name, (SELECT COUNT(*) FROM live x WHERE x.cat = c.id), c.adult FROM categories c "
+            Country mine = new Country();
+            mine.key = "mine";
+            mine.label = Ui.tr("My list");
+            addIds(mine, "mine:fav", Ui.tr("Favorites"), favorites(d, profile));
+            addIds(mine, "mine:recent", Ui.tr("Recently watched"), recent(d, profile));
+            if (!mine.groups.isEmpty()) out.add(mine);
+
+            // The provider's categories, by country, then by theme
+            Map<String, Country> byName = new HashMap<>();
+            Map<String, Map<String, List<String>>> themes = new HashMap<>();
+            List<String> unknown = new ArrayList<>();
+            String sql = "SELECT c.id, c.name, (SELECT COUNT(*) FROM live x WHERE x.cat = c.id) FROM categories c "
                     + "WHERE c.type = 'live' AND " + catClause(p, kid, "c.id", false) + " ORDER BY c.pos";
             try (Cursor cur = d.rawQuery(sql, null)) {
                 while (cur.moveToNext()) {
                     int n = cur.getInt(2);
-                    if (n > 0) cats.add(new Category(ContentType.LIVE, cur.getString(0), cur.getString(1), n, cur.getInt(3) == 1));
+                    if (n == 0) continue;
+                    String id = cur.getString(0), name = cur.getString(1) == null ? "" : cur.getString(1);
+                    String country = country(name);
+                    if (country.equals(WORLD) && unknown.size() < 12) unknown.add(name);
+                    Country k = byName.get(country);
+                    if (k == null) {
+                        k = new Country();
+                        k.key = "c:" + country;
+                        k.label = country;
+                        byName.put(country, k);
+                        themes.put(country, new HashMap<>());
+                    }
+                    k.count += n;
+                    String theme = theme(name);
+                    Map<String, List<String>> t = themes.get(country);
+                    List<String> ids = t.get(theme);
+                    if (ids == null) t.put(theme, ids = new ArrayList<>());
+                    ids.add(id);
                 }
             }
-            List<CatInfo> infos = Classifier.INSTANCE.classify(ContentType.LIVE, cats);
-            Set<Lang> langs = Lang.Companion.decode(p.getString("lang_" + profile, null));
-            if (langs == null) langs = kid ? Lang.Companion.getKIDS() : Lang.Companion.getDEFAULT();
-            for (Group g : Classifier.INSTANCE.genreGroups(ContentType.LIVE, infos, langs)) add(out, g.getKey(), g.getLabel(), g.getCatIds());
-            if (langs.contains(Lang.TR)) add(out, "tr", "Chaînes turques", Classifier.INSTANCE.idsFor(infos, Lang.TR));
-            if (langs.contains(Lang.OTHER)) {
-                for (Group g : Classifier.INSTANCE.otherLanguageGroups(infos)) add(out, g.getKey(), g.getLabel(), g.getCatIds());
+            List<Country> countries = new ArrayList<>(byName.values());
+            Collections.sort(countries, (x, y) -> {
+                int fx = rank(x.label), fy = rank(y.label);
+                if (fx != fy) return Integer.compare(fx, fy);
+                return Integer.compare(y.count, x.count);
+            });
+            Map<String, String> labels = Classifier.INSTANCE.getLiveLabels();
+            for (Country k : countries) {
+                Map<String, List<String>> t = themes.get(k.label);
+                for (String theme : Classifier.INSTANCE.getLiveOrder()) {
+                    List<String> ids = t.get(theme);
+                    if (ids == null) continue;
+                    LiveGroup g = new LiveGroup();
+                    g.key = k.key + ":" + theme;
+                    g.label = labels.containsKey(theme) ? labels.get(theme) : theme;
+                    g.cats = ids;
+                    k.groups.add(g);
+                }
+                if (k.groups.size() == 1) k.groups.get(0).label = Ui.tr("All channels");
+                out.add(k);
             }
+            StringBuilder log = new StringBuilder("iptv: ").append(countries.size()).append(" countries:");
+            for (int i = 0; i < Math.min(14, countries.size()); i++) {
+                log.append(' ').append(countries.get(i).label).append(' ').append(countries.get(i).count);
+            }
+            if (!unknown.isEmpty()) log.append(" | international: ").append(unknown);
+            if (!log.toString().equals(lastLog)) AppLog.w(lastLog = log.toString());
         } catch (RuntimeException e) {
             AppLog.w("iptv: live categories unreadable: " + e.getMessage());
             closeDb();
@@ -333,13 +376,176 @@ final class Iptv {
         return out;
     }
 
-    private static void add(List<LiveGroup> out, String key, String label, List<String> cats) {
-        if (cats == null || cats.isEmpty()) return;
+    private static String lastLog;
+
+    private static void addIds(Country k, String key, String label, List<Integer> ids) {
+        if (ids.isEmpty()) return;
         LiveGroup g = new LiveGroup();
         g.key = key;
         g.label = label;
-        g.cats = cats;
-        out.add(g);
+        g.ids = ids;
+        k.groups.add(g);
+    }
+
+    // MARK: Countries
+
+    private static final String WORLD = "International";
+
+    /** France first (home), then the countries by size; "International" (no country) last. */
+    private static int rank(String country) {
+        if (country.equals("France")) return 0;
+        return country.equals(WORLD) ? 2 : 1;
+    }
+
+    /**
+     * One theme per category (Lumen's first), so a channel shows up once per country; "SPORTS" wins over "SKY" (which
+     * Lumen files under cinema) unless the name speaks of films.
+     */
+    static String theme(String name) {
+        Set<String> keys = Classifier.INSTANCE.liveGroups(name);
+        String up = " " + name.toUpperCase(Locale.ROOT).replaceAll("[^A-Z0-9+]+", " ") + " ";
+        if (keys.contains("cinema") && (up.contains(" SPORT ") || up.contains(" SPORTS "))
+                && !up.contains(" CINEMA ") && !up.contains(" MOVIES ") && !up.contains(" FILMS ")) return "sport";
+        return keys.isEmpty() ? "other" : keys.iterator().next();
+    }
+
+    /** The codes providers put before a category's name ("FR| TNT", "MA - SPORT", "[DE] KINO"), as countries. */
+    private static final Map<String, String> CODES = new HashMap<>();
+
+    private static void codes(String country, String... list) {
+        for (String code : list) CODES.put(code, country);
+    }
+
+    static {
+        codes("France", "FR", "FRA", "FRE", "VF", "VFF", "VOSTFR");
+        codes("Belgique", "BE");
+        codes("Suisse", "CH");
+        codes("Québec", "QC");
+        codes("Canada", "CA");
+        codes("Luxembourg", "LU");
+        codes("Monaco", "MC");
+        codes("Royaume-Uni", "UK", "GB", "ENG");
+        codes("Irlande", "IE");
+        codes("États-Unis", "US", "USA");
+        codes("Australie", "AU", "AUS");
+        codes("Nouvelle-Zélande", "NZ");
+        codes("Anglais", "EN");
+        codes("Monde arabe", "AR", "ARAB", "ARB");
+        codes("Maroc", "MA", "MAR");
+        codes("Algérie", "DZ", "ALG");
+        codes("Tunisie", "TN", "TUN");
+        codes("Égypte", "EG");
+        codes("Liban", "LB");
+        codes("Arabie saoudite", "SA", "KSA");
+        codes("Émirats", "AE", "UAE");
+        codes("Qatar", "QA");
+        codes("Koweït", "KW");
+        codes("Irak", "IQ");
+        codes("Syrie", "SY");
+        codes("Jordanie", "JO");
+        codes("Palestine", "PS");
+        codes("Libye", "LY");
+        codes("Kurdistan", "KU", "KUR");
+        codes("Turquie", "TR", "TUR");
+        codes("Iran", "IR");
+        codes("Afghanistan", "AF");
+        codes("Allemagne", "DE", "GER");
+        codes("Autriche", "AT");
+        codes("Espagne", "ES", "SP");
+        codes("Italie", "IT");
+        codes("Portugal", "PT");
+        codes("Brésil", "BR", "PT/BR");
+        codes("Pays-Bas", "NL");
+        codes("Amérique latine", "LA", "LAT", "LATINO");
+        codes("Chili", "CL");
+        codes("Mexique", "MX");
+        codes("Argentine", "ARG");
+        codes("Inde", "IN", "IND");
+        codes("Asie", "ASIA");
+        codes("Pakistan", "PK");
+        codes("Bangladesh", "BN", "BD");
+        codes("Vietnam", "VN");
+        codes("Thaïlande", "TH");
+        codes("Malaisie", "MYS", "MY");
+        codes("Philippines", "PH");
+        codes("Chine", "CN");
+        codes("Japon", "JP");
+        codes("Corée", "KR");
+        codes("Russie", "RU");
+        codes("Ukraine", "UA");
+        codes("Pologne", "PL");
+        codes("Grèce", "GR");
+        codes("Israël", "IL");
+        codes("Albanie", "AL");
+        codes("Bulgarie", "BG");
+        codes("Roumanie", "RO");
+        codes("Hongrie", "HU");
+        codes("Tchéquie", "CZ");
+        codes("Serbie", "SR", "RS");
+        codes("Bosnie", "BH", "BA");
+        codes("Croatie", "HR");
+        codes("Macédoine", "MK");
+        codes("Slovénie", "SI");
+        codes("Lituanie", "LT");
+        codes("Géorgie", "GE");
+        codes("Arménie", "AM");
+        codes("Azerbaïdjan", "AZ");
+        codes("Kazakhstan", "KZ");
+        codes("Ex-Yougoslavie", "EX", "EXYU");
+        codes("Suède", "SE");
+        codes("Danemark", "DK");
+        codes("Norvège", "NO");
+        codes("Finlande", "FI");
+        codes("Afrique", "AFR", "AFRICA");
+        codes("Somalie", "SO");
+        codes("Malte", "MT");
+        codes("Europe", "EU");
+    }
+
+    /** Country words in names without a code ("FRANCE TNT", "BEIN SPORTS ARABIC"). */
+    private static final String[][] WORDS = {
+            {"QUEBEC", "Québec"}, {"BELGIQUE", "Belgique"}, {"BELGIUM", "Belgique"}, {"SUISSE", "Suisse"},
+            {"SWITZERLAND", "Suisse"}, {"CANADA", "Canada"}, {"FRANCE", "France"}, {"MAROC", "Maroc"}, {"MOROCCO", "Maroc"},
+            {"ALGERIE", "Algérie"}, {"ALGERIA", "Algérie"}, {"TUNISIE", "Tunisie"}, {"TUNISIA", "Tunisie"},
+            {"AFRIQUE", "Afrique"}, {"AFRICA", "Afrique"}, {"ANTILLES", "Antilles"}, {"CARIBBEAN", "Antilles"},
+            {"REUNION", "La Réunion"}, {"USA", "États-Unis"}, {"UNITED KINGDOM", "Royaume-Uni"}, {"PORTUGAL", "Portugal"},
+            {"BRAZIL", "Brésil"}, {"BRASIL", "Brésil"}};
+
+    /** Lumen's languages (Classifier.language) as countries, for names with no code and no country word. */
+    private static final Map<String, String> FROM_LANGUAGE = new HashMap<>();
+
+    static {
+        String[][] m = {{"Turc", "Turquie"}, {"Turc VOST arabe", "Turquie"}, {"Indien & Asie", "Inde"},
+                {"Allemand", "Allemagne"}, {"Espagnol", "Espagne"}, {"Italien", "Italie"}, {"Kurde", "Kurdistan"},
+                {"Hébreu", "Israël"}, {"Russe", "Russie"}, {"Bulgare", "Bulgarie"}, {"Néerlandais", "Pays-Bas"},
+                {"Nordique", "Pays nordiques"}, {"Arabe", "Monde arabe"}, {"Persan", "Iran"}, {"Grec", "Grèce"},
+                {"Polonais", "Pologne"}, {"Afrique", "Afrique"}, {"Portugais", "Portugal"}, {"Albanais", "Albanie"},
+                {"Roumain", "Roumanie"}, {"Europe de l'Est", "Europe de l'Est"}};
+        for (String[] e : m) FROM_LANGUAGE.put(e[0], e[1]);
+    }
+
+    private static final Pattern PREFIX = Pattern.compile("^\\s*[|\\[(]?\\s*([A-Za-z]{2,6}(?:/[A-Za-z]{2,3})?)\\s*[|\\-:•\\])]");
+
+    /** The country of a live category, from its name ("International" when it has none: "NETFLIX 24/7", "PPV"). */
+    static String country(String name) {
+        Matcher m = PREFIX.matcher(name);
+        boolean coded = false;
+        if (m.find()) {
+            String code = m.group(1).toUpperCase(Locale.ROOT);
+            String k = CODES.get(code);
+            if (k == null && code.contains("/")) k = CODES.get(code.substring(0, code.indexOf('/')));
+            if (k != null) return k;
+            coded = code.length() == 2;     // an unknown two-letter code is still a country ("MT|"); "VIP|", "4K|" aren't
+        }
+        String up = " " + Normalizer.normalize(name, Normalizer.Form.NFD).replaceAll("\\p{Mn}+", "").toUpperCase(Locale.ROOT)
+                .replaceAll("[^A-Z0-9+]+", " ") + " ";
+        for (String[] w : WORDS) if (up.contains(" " + w[0] + " ")) return w[1];
+        kotlin.Pair<Lang, String> lang = Classifier.INSTANCE.language(name);
+        if (lang.getFirst() == Lang.FR) return "France";
+        if (lang.getFirst() == Lang.TR) return "Turquie";
+        if (lang.getFirst() == Lang.EN) return coded ? "Anglais" : WORLD;   // no code at all: an international one
+        String k = FROM_LANGUAGE.get(lang.getSecond());
+        return k != null ? k : WORLD;
     }
 
     /** A row's channels (all of them; the guide and logos are fetched for the ones on screen). */
@@ -376,17 +582,24 @@ final class Iptv {
         return out;
     }
 
-    /** "Ma liste": the profile's favorite channels (latest first), then the last ones watched. */
-    private static List<Integer> myList(SQLiteDatabase d, long profile) {
-        String pid = String.valueOf(profile);
-        Set<Integer> ids = new LinkedHashSet<>();
-        try (Cursor cur = d.rawQuery("SELECT item FROM favorite WHERE profile=? AND type='live' ORDER BY added DESC", new String[] {pid})) {
+    /** The profile's favorite channels in Lumen ("Ma liste"), the latest first. */
+    private static List<Integer> favorites(SQLiteDatabase d, long profile) {
+        List<Integer> ids = new ArrayList<>();
+        try (Cursor cur = d.rawQuery("SELECT item FROM favorite WHERE profile=? AND type='live' ORDER BY added DESC",
+                new String[] {String.valueOf(profile)})) {
             while (cur.moveToNext()) ids.add(cur.getInt(0));
         }
-        try (Cursor cur = d.rawQuery("SELECT item FROM recent_live WHERE profile=? ORDER BY watched DESC LIMIT 30", new String[] {pid})) {
+        return ids;
+    }
+
+    /** The last channels the profile watched in Lumen. */
+    private static List<Integer> recent(SQLiteDatabase d, long profile) {
+        List<Integer> ids = new ArrayList<>();
+        try (Cursor cur = d.rawQuery("SELECT item FROM recent_live WHERE profile=? ORDER BY watched DESC LIMIT 30",
+                new String[] {String.valueOf(profile)})) {
             while (cur.moveToNext()) ids.add(cur.getInt(0));
         }
-        return new ArrayList<>(ids);
+        return ids;
     }
 
     private static boolean isKid(SQLiteDatabase d, long profile) {

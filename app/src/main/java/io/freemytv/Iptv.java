@@ -325,7 +325,7 @@ final class Iptv {
                     if (n == 0) continue;
                     String id = cur.getString(0), name = cur.getString(1) == null ? "" : cur.getString(1);
                     String country = country(name);
-                    if (country.equals(WORLD) && unknown.size() < 12) unknown.add(name);
+                    if ((country.equals(WORLD) || REGIONS.contains(country)) && unknown.size() < 40) unknown.add(name);
                     Country k = byName.get(country);
                     if (k == null) {
                         k = new Country();
@@ -367,7 +367,7 @@ final class Iptv {
             for (int i = 0; i < Math.min(14, countries.size()); i++) {
                 log.append(' ').append(countries.get(i).label).append(' ').append(countries.get(i).count);
             }
-            if (!unknown.isEmpty()) log.append(" | international: ").append(unknown);
+            if (!unknown.isEmpty()) log.append(" | in a region or international: ").append(unknown);
             if (!log.toString().equals(lastLog)) AppLog.w(lastLog = log.toString());
         } catch (RuntimeException e) {
             AppLog.w("iptv: live categories unreadable: " + e.getMessage());
@@ -524,6 +524,49 @@ final class Iptv {
         for (String[] e : m) FROM_LANGUAGE.put(e[0], e[1]);
     }
 
+    /** Codes that name a region rather than a country: the country inside the name, when there is one, wins. */
+    private static final Set<String> REGIONS = new java.util.HashSet<>(Arrays.asList(
+            "Monde arabe", "Afrique", "Asie", "Ex-Yougoslavie", "Amérique latine", "Europe", "Anglais"));
+
+    /** Countries named inside a category, in Latin letters (" MAROC ") or Arabic ones ("المغرب"). */
+    private static final String[][] INSIDE = {
+            {"MAROC", "Maroc"}, {"MOROCCO", "Maroc"}, {"MAROCAINE", "Maroc"}, {"MAROCAIN", "Maroc"}, {"المغرب", "Maroc"},
+            {"المغربية", "Maroc"}, {"ALGERIE", "Algérie"}, {"ALGERIA", "Algérie"}, {"ALGERIENNE", "Algérie"}, {"الجزائر", "Algérie"},
+            {"TUNISIE", "Tunisie"}, {"TUNISIA", "Tunisie"}, {"تونس", "Tunisie"}, {"EGYPT", "Égypte"}, {"EGYPTE", "Égypte"},
+            {"مصر", "Égypte"}, {"LIBAN", "Liban"}, {"LEBANON", "Liban"}, {"لبنان", "Liban"}, {"SAUDI", "Arabie saoudite"},
+            {"KSA", "Arabie saoudite"}, {"السعودية", "Arabie saoudite"}, {"QATAR", "Qatar"}, {"قطر", "Qatar"},
+            {"EMIRATES", "Émirats"}, {"UAE", "Émirats"}, {"DUBAI", "Émirats"}, {"الإمارات", "Émirats"}, {"KUWAIT", "Koweït"},
+            {"الكويت", "Koweït"}, {"IRAQ", "Irak"}, {"IRAK", "Irak"}, {"العراق", "Irak"}, {"SYRIA", "Syrie"}, {"SYRIE", "Syrie"},
+            {"سوريا", "Syrie"}, {"JORDAN", "Jordanie"}, {"الأردن", "Jordanie"}, {"PALESTINE", "Palestine"}, {"فلسطين", "Palestine"},
+            {"LIBYA", "Libye"}, {"LIBYE", "Libye"}, {"ليبيا", "Libye"}, {"SUDAN", "Soudan"}, {"السودان", "Soudan"},
+            {"OMAN", "Oman"}, {"عمان", "Oman"}, {"BAHRAIN", "Bahreïn"}, {"البحرين", "Bahreïn"}, {"YEMEN", "Yémen"},
+            {"اليمن", "Yémen"}, {"MAURITANIE", "Mauritanie"}, {"موريتانيا", "Mauritanie"},
+            {"SENEGAL", "Sénégal"}, {"CAMEROUN", "Cameroun"}, {"CAMEROON", "Cameroun"}, {"NIGERIA", "Nigeria"},
+            {"IVOIRE", "Côte d'Ivoire"}, {"IVORY", "Côte d'Ivoire"}, {"CONGO", "Congo"}, {"MALI", "Mali"}, {"GHANA", "Ghana"},
+            {"KENYA", "Kenya"}, {"SOUTH AFRICA", "Afrique du Sud"}, {"ETHIOPIA", "Éthiopie"},
+            {"INDIA", "Inde"}, {"PAKISTAN", "Pakistan"}, {"CHINA", "Chine"}, {"JAPAN", "Japon"}, {"KOREA", "Corée"},
+            {"THAILAND", "Thaïlande"}, {"VIETNAM", "Vietnam"}, {"PHILIPPINES", "Philippines"}, {"INDONESIA", "Indonésie"},
+            {"MALAYSIA", "Malaisie"}, {"SERBIA", "Serbie"}, {"CROATIA", "Croatie"}, {"BOSNIA", "Bosnie"},
+            {"SLOVENIA", "Slovénie"}, {"MACEDONIA", "Macédoine"}, {"MONTENEGRO", "Monténégro"},
+            {"MEXICO", "Mexique"}, {"ARGENTINA", "Argentine"}, {"COLOMBIA", "Colombie"}, {"CHILE", "Chili"}, {"PERU", "Pérou"}};
+
+    private static String countryWord(String name) {
+        String up = words(name);
+        for (String[] w : INSIDE) if (up.contains(w[2])) return w[1];
+        return null;
+    }
+
+    /** Upper case, no accents or marks (Arabic hamzas too), words between single spaces: " AR MAROC ". */
+    private static String words(String s) {
+        return " " + Normalizer.normalize(s, Normalizer.Form.NFD).replaceAll("\\p{Mn}+", "").toUpperCase(Locale.ROOT)
+                .replaceAll("[^\\p{L}0-9]+", " ").trim() + " ";
+    }
+
+    static {
+        // Each word as words() writes it, so the names and the list compare alike
+        for (int i = 0; i < INSIDE.length; i++) INSIDE[i] = new String[] {INSIDE[i][0], INSIDE[i][1], words(INSIDE[i][0])};
+    }
+
     private static final Pattern PREFIX = Pattern.compile("^\\s*[|\\[(]?\\s*([A-Za-z]{2,6}(?:/[A-Za-z]{2,3})?)\\s*[|\\-:•\\])]");
 
     /** The country of a live category, from its name ("International" when it has none: "NETFLIX 24/7", "PPV"). */
@@ -534,12 +577,19 @@ final class Iptv {
             String code = m.group(1).toUpperCase(Locale.ROOT);
             String k = CODES.get(code);
             if (k == null && code.contains("/")) k = CODES.get(code.substring(0, code.indexOf('/')));
+            if (k != null && REGIONS.contains(k)) {
+                // A region ("AR| MAROC", "AFR| SENEGAL", "ASIA| INDIA"): the country when the name gives it
+                String inside = countryWord(name);
+                return inside != null ? inside : k;
+            }
             if (k != null) return k;
             coded = code.length() == 2;     // an unknown two-letter code is still a country ("MT|"); "VIP|", "4K|" aren't
         }
         String up = " " + Normalizer.normalize(name, Normalizer.Form.NFD).replaceAll("\\p{Mn}+", "").toUpperCase(Locale.ROOT)
                 .replaceAll("[^A-Z0-9+]+", " ") + " ";
         for (String[] w : WORDS) if (up.contains(" " + w[0] + " ")) return w[1];
+        String inside = countryWord(name);
+        if (inside != null) return inside;
         kotlin.Pair<Lang, String> lang = Classifier.INSTANCE.language(name);
         if (lang.getFirst() == Lang.FR) return "France";
         if (lang.getFirst() == Lang.TR) return "Turquie";

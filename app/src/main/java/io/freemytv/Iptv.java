@@ -21,13 +21,11 @@ import java.text.Normalizer;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
-import java.util.regex.Pattern;
 
 /**
  * Salon's side of Lumen, the IPTV player in the same app: its catalog (lumen.db, written by Lumen in the main process)
@@ -88,27 +86,108 @@ final class Iptv {
         return db;
     }
 
-    /** Lumen's own lowercase, accent-free form (Text.normalize), then without spaces or punctuation. */
-    static String key(String title) {
+    /** A TMDB title in the catalog's form (Lumen's Text.normalize: lowercase, no accents), as keyHash() sees it. */
+    static String fold(String title) {
         if (title == null) return "";
-        String s = Normalizer.normalize(title.toLowerCase(Locale.ROOT), Normalizer.Form.NFD).replaceAll("\\p{Mn}+", "");
-        s = s.replace('&', ' ').replaceAll("\\s+", " ").trim();
-        // Quality and language tags some providers leave after the title ("dune multi", "dune 4k")
-        String[] words = s.split(" ");
-        int end = words.length;
-        while (end > 1 && TAGS.contains(words[end - 1])) end--;
-        StringBuilder b = new StringBuilder();
-        for (int i = 0; i < end; i++) b.append(words[i]);
-        return b.toString().replaceAll("[^\\p{L}\\p{N}]+", "");
+        return Normalizer.normalize(title.toLowerCase(Locale.ROOT), Normalizer.Form.NFD).replaceAll("\\p{Mn}+", "");
     }
 
-    private static final Set<String> TAGS = new HashSet<>(Arrays.asList(
+    private static final String[] TAGS = {
             "fr", "vf", "vff", "vfq", "vo", "vost", "vostfr", "multi", "4k", "uhd", "fhd", "hd", "sd", "hdr", "en", "truefrench",
-            "french", "1080p", "720p", "2160p", "hevc", "x265", "x264"));
+            "french", "1080p", "720p", "2160p", "hevc", "x265", "x264"};
+    private static final long FNV = 0xcbf29ce484222325L, PRIME = 0x100000001b3L;
+
+    /**
+     * A normalized title (the catalog's `norm` column, or fold() of a TMDB title) reduced to its letters and digits,
+     * without the quality or language tags some providers leave at the end ("dune multi", "dune 4k"; never the first
+     * word), as a 44-bit hash (0 = no letters). One pass, no string built: it runs on every title of the playlist.
+     */
+    static long keyHash(String s) {
+        if (s == null) return 0;
+        int len = s.length(), words = 0;
+        int[] start = new int[8], end = new int[8];
+        long[] before = new long[8];
+        long h = FNV;
+        boolean inWord = false;
+        for (int i = 0; i < len; i++) {
+            char ch = s.charAt(i);
+            if (!Character.isLetterOrDigit(ch)) {
+                inWord = false;
+                continue;
+            }
+            if (!inWord) {
+                if (words == start.length) {
+                    start = Arrays.copyOf(start, words * 2);
+                    end = Arrays.copyOf(end, words * 2);
+                    before = Arrays.copyOf(before, words * 2);
+                }
+                start[words] = i;
+                before[words] = h;
+                words++;
+                inWord = true;
+            }
+            h = (h ^ ch) * PRIME;
+            end[words - 1] = i + 1;
+        }
+        if (words == 0) return 0;
+        while (words > 1 && isTag(s, start[words - 1], end[words - 1])) h = before[--words];
+        long k = h >>> Table.ROW_BITS;
+        return k == 0 ? 1 : k;
+    }
+
+    private static boolean isTag(String s, int from, int to) {
+        int n = to - from;
+        for (String t : TAGS) if (t.length() == n && s.regionMatches(from, t, 0, n)) return true;
+        return false;
+    }
+
+    /**
+     * One table of the catalog (movies or series) as sorted numbers: (title hash << 20 | row), with each row's id and
+     * year beside it. About 16 bytes per title (a map of strings would take ten times that in the home screen's memory).
+     */
+    private static final class Table {
+        static final int ROW_BITS = 20, MAX_ROWS = 1 << ROW_BITS;
+        long[] keys = new long[4096];
+        int[] ids = new int[4096];
+        short[] years = new short[4096];
+        int size;
+
+        void add(long hash, int id, int year) {
+            if (hash == 0 || size >= MAX_ROWS) return;
+            if (size == keys.length) {
+                int n = Math.min(MAX_ROWS, size * 2);
+                keys = Arrays.copyOf(keys, n);
+                ids = Arrays.copyOf(ids, n);
+                years = Arrays.copyOf(years, n);
+            }
+            keys[size] = hash << ROW_BITS | size;
+            ids[size] = id;
+            years[size] = (short) year;
+            size++;
+        }
+
+        void seal() {
+            keys = Arrays.copyOf(keys, size);
+            ids = Arrays.copyOf(ids, size);
+            years = Arrays.copyOf(years, size);
+            Arrays.sort(keys);
+        }
+
+        /** Index of the first entry with this hash (or where it would be). */
+        int first(long hash) {
+            long want = hash << ROW_BITS;
+            int lo = 0, hi = size;
+            while (lo < hi) {
+                int mid = (lo + hi) >>> 1;
+                if (keys[mid] < want) lo = mid + 1; else hi = mid;
+            }
+            return lo;
+        }
+    }
 
     private static final class Index {
         long builtFor;
-        final Map<String, List<int[]>> movies = new HashMap<>(), series = new HashMap<>();
+        final Table movies = new Table(), series = new Table();
     }
 
     private static Index index;
@@ -119,6 +198,7 @@ final class Iptv {
         if (index != null && index.builtFor == synced) return index;
         SQLiteDatabase d = db(c);
         if (d == null) return null;
+        long t0 = System.currentTimeMillis();
         Index ix = new Index();
         ix.builtFor = synced;
         try {
@@ -129,21 +209,17 @@ final class Iptv {
             closeDb();
             return null;
         }
-        AppLog.w("iptv: catalog of " + ix.movies.size() + " movie titles and " + ix.series.size() + " series titles");
+        AppLog.w("iptv: catalog of " + ix.movies.size + " movies and " + ix.series.size + " series, read in "
+                + (System.currentTimeMillis() - t0) + " ms");
         index = ix;
         return ix;
     }
 
-    private static void fill(SQLiteDatabase d, String table, Map<String, List<int[]>> out) {
+    private static void fill(SQLiteDatabase d, String table, Table out) {
         try (Cursor cur = d.rawQuery("SELECT id, norm, year FROM " + table, null)) {
-            while (cur.moveToNext()) {
-                String k = key(cur.getString(1));
-                if (k.isEmpty()) continue;
-                List<int[]> list = out.get(k);
-                if (list == null) out.put(k, list = new ArrayList<>(1));
-                list.add(new int[] {cur.getInt(0), year(cur.getString(2))});
-            }
+            while (cur.moveToNext()) out.add(keyHash(cur.getString(1)), cur.getInt(0), year(cur.getString(2)));
         }
+        out.seal();
     }
 
     private static synchronized void closeDb() {
@@ -151,12 +227,18 @@ final class Iptv {
         db = null;
     }
 
-    private static final Pattern YEAR = Pattern.compile("(19|20)\\d{2}");
-
+    /** The first 19xx or 20xx in the text ("2023", "2023-05-01"), else 0. Without a regex: once per title. */
     static int year(String s) {
         if (s == null) return 0;
-        java.util.regex.Matcher m = YEAR.matcher(s);
-        return m.find() ? Integer.parseInt(m.group()) : 0;
+        for (int i = 0; i + 4 <= s.length(); i++) {
+            char a = s.charAt(i), b = s.charAt(i + 1);
+            if (!((a == '1' && b == '9') || (a == '2' && b == '0'))) continue;
+            char c = s.charAt(i + 2), d = s.charAt(i + 3);
+            if (c < '0' || c > '9' || d < '0' || d > '9') continue;
+            boolean before = i > 0 && Character.isDigit(s.charAt(i - 1)), after = i + 4 < s.length() && Character.isDigit(s.charAt(i + 4));
+            if (!before && !after) return (a - '0') * 1000 + (b - '0') * 100 + (c - '0') * 10 + (d - '0');
+        }
+        return 0;
     }
 
     /**
@@ -166,19 +248,25 @@ final class Iptv {
     static Match find(Context c, String kind, String title, String original, int year) {
         Index ix = index(c);
         if (ix == null) return null;
-        Map<String, List<int[]>> map = "movie".equals(kind) ? ix.movies : ix.series;
-        for (String t : new String[] {title, original}) {
-            List<int[]> hits = map.get(key(t));
-            if (hits == null) continue;
-            int[] best = null;
-            for (int[] h : hits) {
-                boolean sameYear = year == 0 || h[1] == 0 || Math.abs(h[1] - year) <= 1;
-                if (sameYear && (best == null || (h[1] == year && best[1] != year))) best = h;
+        Table t = "movie".equals(kind) ? ix.movies : ix.series;
+        for (String name : new String[] {title, original}) {
+            long h = keyHash(fold(name));
+            if (h == 0) continue;
+            int bestId = 0, bestYear = 0;
+            boolean found = false;
+            for (int i = t.first(h); i < t.size && (t.keys[i] >>> Table.ROW_BITS) == h; i++) {
+                int row = (int) (t.keys[i] & (Table.MAX_ROWS - 1)), y = t.years[row];
+                boolean sameYear = year == 0 || y == 0 || Math.abs(y - year) <= 1;
+                if (sameYear && (!found || (y == year && bestYear != year))) {
+                    bestId = t.ids[row];
+                    bestYear = y;
+                    found = true;
+                }
             }
-            if (best == null) continue;     // a namesake from another year: not this one
+            if (!found) continue;     // a namesake from another year: not this one
             Match m = new Match();
             m.type = "movie".equals(kind) ? "movie" : "series";
-            m.id = best[0];
+            m.id = bestId;
             return m;
         }
         return null;

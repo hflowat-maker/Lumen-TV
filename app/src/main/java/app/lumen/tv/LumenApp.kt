@@ -27,8 +27,7 @@ class LumenApp : Application(), ImageLoaderFactory {
         super.onCreate()
         // Salon (l'écran d'accueil) : ses réglages dans tous les processus ; dans les siens (:home, :keys), rien
         // d'autre (le lecteur, la base et le réseau de Lumen n'y servent pas).
-        io.freemytv.App.init(this)
-        if (io.freemytv.App.isSalonProcess()) return
+        if (salonInit()) return
         CrashReport.install(this)
         prefs = Prefs(this)
         http = OkHttpClient.Builder()
@@ -43,6 +42,19 @@ class LumenApp : Application(), ImageLoaderFactory {
             .build()
         repo = Repo(prefs, XtreamApi(http), Db(this), http)
         applyConfigFile()
+    }
+
+    /**
+     * Démarre Salon (classe Java io.freemytv.App, appelée par son nom : le compilateur Kotlin ne lit pas les sources
+     * Java de Salon). Vrai dans les processus de Salon.
+     */
+    private fun salonInit(): Boolean = try {
+        val salon = Class.forName("io.freemytv.App")
+        salon.getMethod("init", Application::class.java).invoke(null, this)
+        salon.getMethod("isSalonProcess").invoke(null) == true
+    } catch (e: Exception) {
+        android.util.Log.e(CrashReport.TAG, "Salon n'a pas pu démarrer", e)
+        false
     }
 
     /**

@@ -202,10 +202,15 @@ fun AppRoot(app: AppController) {
     val ready = profile != null && screen !is Screen.Splash && screen !is Screen.Login && screen !is Screen.Sync &&
         screen !is Screen.Profiles && screen !is Screen.ProfileEdit
     LaunchedEffect(salonLink, ready) {
-        if (salonLink == null || !ready) return@LaunchedEffect
-        val r = SalonLink.take() ?: return@LaunchedEffect
-        app.openFromSalon(r, context)
+        val r = salonLink ?: return@LaunchedEffect
+        if (!ready) return@LaunchedEffect
+        try {
+            app.openFromSalon(r, context)
+        } finally {
+            SalonLink.done(r)
+        }
     }
+    val curtain by SalonLink.curtain.collectAsState()
 
     Box(Modifier.fillMaxSize().background(C.backdrop)) {
         holder.SaveableStateProvider(stateKey) {
@@ -226,6 +231,11 @@ fun AppRoot(app: AppController) {
                 Screen.KidCategories -> KidCategoriesScreen(app)
             }
         }
+    }
+
+    // Le temps d'ouvrir ce que Salon demande (ou de lui rendre la main) : un fond uni plutôt que l'accueil de Lumen.
+    if ((salonLink != null && ready) || curtain) {
+        Box(Modifier.fillMaxSize().background(C.backdrop))
     }
 
     crash?.let { report ->

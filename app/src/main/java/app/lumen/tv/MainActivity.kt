@@ -19,12 +19,21 @@ class MainActivity : ComponentActivity() {
             LumenTheme {
                 val app = remember {
                     AppController(lumen.repo, lumen.prefs, LivePreview(lumen, lumen.repo, lumen.prefs, lumen.http)).also {
-                        it.exitToSalon = { moveTaskToBack(true) }
+                        it.exitToSalon = {
+                            // Un fond uni d'abord (l'image que le système garde de Lumen), puis la main à Salon.
+                            SalonLink.curtain.value = true
+                            window.decorView.postDelayed({ moveTaskToBack(true) }, 80)
+                        }
                     }
                 }
                 AppRoot(app)
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        SalonLink.curtain.value = false
     }
 
     /** Lumen déjà ouvert : Salon demande un autre titre ou une autre chaîne. */

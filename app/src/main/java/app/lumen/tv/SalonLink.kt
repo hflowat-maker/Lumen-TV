@@ -42,12 +42,16 @@ object SalonLink {
         fromSalon = true
     }
 
-    /** Prend la demande en attente (une seule fois). */
-    fun take(): Request? {
-        val r = _pending.value
-        _pending.value = null
-        return r
+    /** La demande est traitée (une plus récente, arrivée entre-temps, reste en attente). */
+    fun done(r: Request) {
+        _pending.compareAndSet(r, null)
     }
+
+    /**
+     * Vrai entre « Retour vers Salon » et le retour de Lumen au premier plan : l'écran reste sombre. Sinon l'image que
+     * le système garde de Lumen (son accueil) apparaîtrait un instant à la prochaine chaîne ouverte depuis Salon.
+     */
+    val curtain = MutableStateFlow(false)
 
     fun leftSalon() {
         fromSalon = false

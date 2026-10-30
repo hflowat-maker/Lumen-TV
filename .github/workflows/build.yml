@@ -2,14 +2,14 @@ name: Build APK
 
 on:
   push:
-    branches: [main]
+    branches: [main, salon]
   workflow_dispatch:
 
 permissions:
   contents: write
 
 concurrency:
-  group: build
+  group: build-${{ github.ref_name }}
   cancel-in-progress: true
 
 jobs:
@@ -32,20 +32,21 @@ jobs:
           chmod +x gradlew
           ./gradlew assembleRelease --stacktrace --no-daemon 2>&1 | tee build.log
 
-      - name: Publish build log (branch build-log)
+      - name: Publish build log (branch build-log, build-log-salon for the salon branch)
         if: always()
         shell: bash
         run: |
+          LOG_BRANCH=build-log; [ "${{ github.ref_name }}" = main ] || LOG_BRANCH="build-log-${{ github.ref_name }}"
           mkdir -p /tmp/log && cp build.log /tmp/log/build.log 2>/dev/null || echo "no log" > /tmp/log/build.log
           cd /tmp/log
           git init -q
-          git checkout -q -b build-log
+          git checkout -q -b "$LOG_BRANCH"
           git config user.name "github-actions"
           git config user.email "actions@github.com"
           echo "${{ job.status }} run ${{ github.run_number }} commit ${{ github.sha }}" > status.txt
           git add -A
           git commit -q -m "Log du build ${{ github.run_number }}"
-          git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" build-log
+          git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" "$LOG_BRANCH"
 
       - name: Prepare APK
         run: cp app/build/outputs/apk/release/app-release.apk lumen-tv.apk
@@ -55,20 +56,22 @@ jobs:
           name: lumen-tv-${{ github.run_number }}
           path: lumen-tv.apk
 
-      - name: Publish APK (branch apk)
+      - name: Publish APK (branch apk, apk-salon for the salon branch)
         shell: bash
         run: |
+          APK_BRANCH=apk; [ "${{ github.ref_name }}" = main ] || APK_BRANCH="apk-${{ github.ref_name }}"
           mkdir -p /tmp/apk && cp lumen-tv.apk /tmp/apk/
           cd /tmp/apk
           git init -q
-          git checkout -q -b apk
+          git checkout -q -b "$APK_BRANCH"
           git config user.name "github-actions"
           git config user.email "actions@github.com"
           git add lumen-tv.apk
           git commit -q -m "APK build ${{ github.run_number }}"
-          git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" apk
+          git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" "$APK_BRANCH"
 
       - name: Release
+        if: github.ref_name == 'main'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: build-${{ github.run_number }}

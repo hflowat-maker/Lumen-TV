@@ -12,7 +12,7 @@ android {
 
     defaultConfig {
         applicationId = "app.lumen.tv"
-        minSdk = 23
+        minSdk = 26   // Salon (l'écran d'accueil) en a besoin
         targetSdk = 35
         versionCode = buildNumber
         versionName = "1.0.$buildNumber"

@@ -3,6 +3,41 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Salon: after the TV boots (and after an update), checks the home screen mode and restarts the iPhone remote. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <!-- Salon (Android 11+): the apps the home screen must be able to "see" and open. -->
+    <queries>
+        <package android:name="com.netflix.ninja" />
+        <package android:name="com.google.android.youtube.tv" />
+        <package android:name="com.amazon.amazonvideo.livingroom" />
+        <package android:name="com.disney.disneyplus" />
+        <package android:name="com.wbd.stream" />
+        <package android:name="com.hbo.hbonow" />
+        <package android:name="com.apple.atve.androidtv.appletv" />
+        <package android:name="com.apple.atve.sony.appletv" />
+        <package android:name="com.hulu.livingroomplus" />
+        <package android:name="com.cbs.ott" />
+        <package android:name="com.peacocktv.peacockandroid" />
+        <package android:name="com.globo.globotv" />
+        <package android:name="com.spotify.tv.android" />
+        <package android:name="com.tcl.tv" />
+        <package android:name="com.google.android.tv" />
+        <package android:name="com.mediatek.wwtv.tvcenter" />
+        <package android:name="com.sony.dtv.tvx" />
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="content" android:host="android.media.tv" />
+        </intent>
+    </queries>
 
     <uses-feature android:name="android.software.leanback" android:required="false" />
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
@@ -18,10 +53,14 @@
         android:theme="@style/Theme.Lumen"
         android:usesCleartextTraffic="true">
 
+        <!-- Lumen, the IPTV player. Salon's home screen opens it on a film, a series or a channel (extras salon_*). -->
         <activity
             android:name=".MainActivity"
+            android:banner="@drawable/banner"
             android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|smallestScreenSize|uiMode"
             android:exported="true"
+            android:icon="@mipmap/ic_launcher"
+            android:label="Lumen"
             android:launchMode="singleTask"
             android:screenOrientation="landscape"
             android:windowSoftInputMode="adjustNothing">
@@ -31,5 +70,145 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- ===== Salon, the home screen (classes io.freemytv.*, from Free My TV). ===== -->
+
+        <!-- Its icon opens the settings (switch between Salon and the original home screen). -->
+        <activity
+            android:name="io.freemytv.SettingsActivity"
+            android:banner="@drawable/salon_banner"
+            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:icon="@drawable/salon_icon"
+            android:label="@string/salon_name"
+            android:launchMode="singleTask"
+            android:process=":home"
+            android:screenOrientation="landscape"
+            android:taskAffinity="app.lumen.tv.salon.settings"
+            android:theme="@style/FreeMyTV.Home">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- The home screen, in its own process (:home). It only becomes the TV's home screen in Salon mode. -->
+        <activity
+            android:name="io.freemytv.HomeActivity"
+            android:clearTaskOnLaunch="true"
+            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:icon="@drawable/salon_icon"
+            android:label="@string/salon_name"
+            android:launchMode="singleTask"
+            android:process=":home"
+            android:resumeWhilePausing="true"
+            android:screenOrientation="landscape"
+            android:stateNotNeeded="true"
+            android:taskAffinity=""
+            android:theme="@style/FreeMyTV.Home">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.HOME" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
+        <activity
+            android:name="io.freemytv.PairActivity"
+            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:process=":home"
+            android:screenOrientation="landscape"
+            android:theme="@style/Salon.Overlay" />
+        <activity
+            android:name="io.freemytv.AudioActivity"
+            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:process=":home"
+            android:screenOrientation="landscape"
+            android:theme="@style/Salon.Overlay" />
+        <!-- Exported: the remote opens it through the shell (am start) from any app; it only shows the drawing. -->
+        <activity
+            android:name="io.freemytv.BoardActivity"
+            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:process=":home"
+            android:screenOrientation="landscape"
+            android:taskAffinity="app.lumen.tv.salon.board"
+            android:theme="@style/FreeMyTV.Home" />
+
+        <service
+            android:name="io.freemytv.Screensaver"
+            android:enabled="@bool/dream_in_home"
+            android:exported="true"
+            android:label="@string/salon_name"
+            android:permission="android.permission.BIND_DREAM_SERVICE"
+            android:process=":home">
+            <intent-filter>
+                <action android:name="android.service.dreams.DreamService" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </service>
+
+        <!-- The same screensaver on Android 11, in the main process (see ScreensaverAlone). -->
+        <service
+            android:name="io.freemytv.ScreensaverAlone"
+            android:enabled="@bool/dream_alone"
+            android:exported="true"
+            android:label="@string/salon_name"
+            android:permission="android.permission.BIND_DREAM_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.dreams.DreamService" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </service>
+
+        <!-- The home screen switches, as background jobs in the main process. -->
+        <service
+            android:name="io.freemytv.ModeJob"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+
+        <!-- The remote's app buttons from inside any app. Its own process: the system waits for it on every key. -->
+        <service
+            android:name="io.freemytv.RemoteKeyService"
+            android:exported="true"
+            android:label="@string/salon_name"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
+            android:process=":keys">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/remote_key_service" />
+        </service>
+
+        <receiver
+            android:name="io.freemytv.RemoteReceiver"
+            android:exported="false"
+            android:process=":home">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+
+        <receiver
+            android:name="io.freemytv.HomeReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>

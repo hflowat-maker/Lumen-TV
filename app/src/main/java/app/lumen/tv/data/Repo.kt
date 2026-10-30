@@ -451,6 +451,12 @@ class Repo(
 
     suspend fun tile(type: ContentType, id: Int): Tile? = withContext(Dispatchers.IO) { db.tile(type, id) }
 
+    /** Salon (l'écran d'accueil) : un titre ou des chaînes demandés par leur numéro, avec le filtre du profil. */
+    suspend fun salonTile(type: ContentType, id: Int): Tile? =
+        withContext(Dispatchers.IO) { db.tilesByIds(type, listOf(id), filter).firstOrNull() }
+
+    suspend fun salonChannels(ids: List<Int>): List<Channel> = withContext(Dispatchers.IO) { db.channelsByIds(ids, filter) }
+
     suspend fun channelsIn(categoryId: String): List<Channel> = withContext(Dispatchers.IO) { db.channelsIn(categoryId, filter) }
 
     suspend fun channelsInCats(ids: List<String>): List<Channel> = withContext(Dispatchers.IO) { db.channelsInCats(ids, filter) }

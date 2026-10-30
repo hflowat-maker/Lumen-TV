@@ -1,0 +1,1439 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Salon">
+<meta name="theme-color" content="#0E0D12">
+<meta name="color-scheme" content="dark">
+<meta name="format-detection" content="telephone=no">
+<link rel="apple-touch-icon" href="/icon.png">
+<link rel="icon" href="/icon.png">
+<title>Salon</title>
+<style>
+:root {
+  --bg: #0E0D12;
+  --card: #1F1D27;
+  --card-press: #2A2733;
+  --surface: #1A1822;
+  --line: rgba(255,255,255,0.06);
+  --line2: rgba(255,255,255,0.08);
+  --text: #FFFFFF;
+  --text2: rgba(255,255,255,0.75);
+  --text3: rgba(255,255,255,0.65);
+  --accent: #F2B84B;
+  --ok: #4ADE80;
+  --bad: #FF7A59;
+  --err-text: #FF9C82;
+  /* Marges : valeur de base, ou zone sûre de l'iPhone si elle est plus grande */
+  --pt: max(28px, calc(env(safe-area-inset-top) + 12px));
+  --pr: max(20px, env(safe-area-inset-right));
+  --pb: max(24px, calc(env(safe-area-inset-bottom) + 8px));
+  --pl: max(20px, env(safe-area-inset-left));
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+[hidden] { display: none !important; }
+html {
+  background: var(--bg);
+  color-scheme: dark;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  touch-action: manipulation;
+  overscroll-behavior: none;
+}
+body {
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: var(--bg);
+  color: var(--text);
+  font: 16px/1.35 -apple-system, "SF Pro Text", system-ui, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  overscroll-behavior: none;
+}
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+  touch-action: manipulation;
+}
+button:disabled { opacity: .6; cursor: default; }
+input { font: inherit; color: inherit; -webkit-user-select: text; user-select: text; }
+:focus { outline: none; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.ic {
+  width: 24px; height: 24px; flex: none;
+  fill: none; stroke: currentColor; stroke-width: 2;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+
+/* ---------- Écrans d'association ---------- */
+.screen-center {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--pt) var(--pr) var(--pb) var(--pl);
+}
+.pair-box {
+  width: 100%;
+  max-width: 360px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 14px;
+}
+.badge {
+  width: 68px; height: 68px;
+  border-radius: 22px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  display: grid; place-items: center;
+  color: var(--accent);
+  margin-bottom: 6px;
+}
+.badge .ic { width: 32px; height: 32px; }
+.badge.ok { color: var(--ok); }
+.big-title { font-size: 28px; font-weight: 800; line-height: 1.15; letter-spacing: -0.01em; }
+.lead { font-size: 16px; line-height: 1.45; color: var(--text2); max-width: 310px; text-wrap: balance; }
+.lead .ic { width: 18px; height: 18px; vertical-align: -3px; color: var(--accent); }
+.pair-form { width: 100%; display: flex; flex-direction: column; align-items: center; gap: 12px; margin-top: 10px; }
+#pin {
+  width: 100%;
+  max-width: 260px;
+  height: 76px;
+  border-radius: 20px;
+  background: var(--surface);
+  border: 1.5px solid var(--line2);
+  text-align: center;
+  font-size: 34px;
+  font-weight: 700;
+  letter-spacing: .5em;
+  text-indent: .5em;          /* compense l'espacement après le dernier chiffre */
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  caret-color: var(--accent);
+}
+#pin::placeholder { color: rgba(255,255,255,0.22); }
+#pin:focus { border-color: var(--accent); }
+#pin:focus-visible { outline: none; }
+.msg { min-height: 21px; font-size: 15px; line-height: 1.4; color: var(--text2); max-width: 320px; }
+.msg.err { color: var(--err-text); }
+.btn-main {
+  width: 100%;
+  max-width: 260px;
+  height: 54px;
+  border-radius: 16px;
+  background: var(--accent);
+  color: #0E0D12;
+  font-size: 17px;
+  font-weight: 700;
+}
+.btn-main:active { filter: brightness(.92); }
+
+/* ---------- Télécommande ---------- */
+.app {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: var(--pt) var(--pr) var(--pb) var(--pl);
+  max-width: 560px;
+  margin: 0 auto;
+}
+.top { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; }
+.top-text { min-width: 0; }
+.top h1 {
+  font-size: 26px; font-weight: 800; line-height: 1.15; letter-spacing: -0.01em;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.status { display: flex; align-items: center; gap: 8px; margin-top: 4px; font-size: 15px; color: var(--text2); white-space: nowrap; }
+.dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: rgba(255,255,255,0.35); }
+.dot.on { background: var(--ok); box-shadow: 0 0 0 3px rgba(74,222,128,0.16); }
+.dot.off { background: var(--bad); box-shadow: 0 0 0 3px rgba(255,122,89,0.18); }
+.round {
+  width: 48px; height: 48px; flex: none;
+  border-radius: 50%;
+  background: var(--card);
+  border: 1px solid var(--line);
+  display: grid; place-items: center;
+}
+.round:active { background: var(--card-press); }
+
+/* Onglets */
+.seg { display: flex; height: 44px; background: var(--surface); border-radius: 14px; }
+.seg button {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  height: 44px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text2);
+}
+.seg button::before {             /* la pastille blanche (36px) dans une cible de 44px */
+  content: "";
+  position: absolute;
+  inset: 4px;
+  border-radius: 10px;
+  background: transparent;
+  transition: background .18s ease;
+}
+.seg button span { position: relative; }
+.seg button[aria-selected="true"] { color: #0E0D12; }
+.seg button[aria-selected="true"]::before { background: #FFFFFF; }
+
+.panel { display: flex; flex-direction: column; gap: 18px; }
+.stage { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.ctl { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+
+/* Pavé tactile */
+.pad {
+  position: relative;
+  height: 280px;
+  border-radius: 28px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  overflow: hidden;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  transition: background .2s ease;
+}
+.pad.active { background: #1D1B26; }
+.ring {
+  width: 72px; height: 72px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.015);
+  transition: transform .14s ease-out, border-color .2s ease, background .2s ease;
+  pointer-events: none;
+}
+.pad.active .ring { border-color: rgba(242,184,75,0.55); background: rgba(242,184,75,0.06); }
+.pad-hint { text-align: center; font-size: 13px; line-height: 1.5; color: var(--text3); pointer-events: none; }
+
+/* Touches */
+.keys { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.key {
+  height: 68px;
+  min-width: 0;
+  border-radius: 20px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 5px;
+  padding: 0 4px;
+  font-size: 13px; font-weight: 600; line-height: 1.15;
+  color: var(--text2);
+  text-align: center;
+  transition: transform .08s ease, background .12s ease;
+}
+.key .ic { color: var(--text); }
+.key:active { background: var(--card-press); transform: scale(.97); }
+.key[aria-expanded="true"] { border-color: var(--accent); }
+.key[aria-expanded="true"] .ic { color: var(--accent); }
+
+/* Clavier */
+.kbd {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  padding: 12px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.kbd-row { display: flex; gap: 10px; }
+.kbd input {
+  flex: 1; min-width: 0;
+  height: 48px;
+  border-radius: 14px;
+  background: var(--surface);
+  border: 1px solid var(--line2);
+  padding: 0 14px;
+  font-size: 16px;            /* 16px : iOS ne zoome pas */
+}
+.kbd input::placeholder { color: rgba(255,255,255,0.4); }
+.kbd input:focus { border-color: rgba(242,184,75,0.6); }
+.icon-btn {
+  width: 52px; height: 48px; flex: none;
+  border-radius: 14px;
+  background: var(--surface);
+  border: 1px solid var(--line2);
+  display: grid; place-items: center;
+}
+.icon-btn:active { background: var(--card-press); }
+.btn {
+  height: 48px;
+  border-radius: 14px;
+  padding: 0 16px;
+  font-size: 15px; font-weight: 700;
+}
+.btn.ghost { flex: 1; background: var(--surface); border: 1px solid var(--line2); color: var(--text); }
+.btn.primary { flex: 2; background: var(--accent); color: #0E0D12; }
+.btn:active { filter: brightness(.9); }
+
+/* Écouteurs */
+.audio {
+  width: 100%;
+  height: 64px;
+  border-radius: 20px;
+  background: var(--surface);
+  border: 1.5px solid var(--accent);
+  display: flex; align-items: center; gap: 14px;
+  padding: 0 18px;
+  text-align: left;
+}
+.audio:active { background: #211F2B; }
+.audio > .ic { color: var(--accent); }
+.a-text { flex: 1; min-width: 0; }
+.a-title { font-size: 16px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.a-sub { font-size: 13px; color: var(--text2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
+.a-sub.on { color: var(--ok); }
+.a-action { flex: none; font-size: 15px; font-weight: 700; color: var(--accent); }
+.a-action.busy { color: var(--text2); font-weight: 600; }
+
+/* Applis */
+.group { display: flex; flex-direction: column; gap: 10px; }
+.label { font-size: 13px; font-weight: 700; letter-spacing: .14em; color: var(--text3); text-transform: uppercase; }
+.apps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.chip {
+  display: block;
+  min-width: 0;
+  height: 44px;
+  border-radius: 14px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  padding: 0 7px;
+  font-size: 13px; font-weight: 600;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.chip:active { background: var(--card-press); }
+.apps-empty { font-size: 14px; color: var(--text3); }
+
+/* ---------- Dessin ---------- */
+.board {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: 18px;
+  background: var(--surface);
+  overflow: hidden;
+  touch-action: none;
+  flex: none;
+}
+.board::after {               /* bordure par-dessus le dessin, sans réduire la zone 16:9 */
+  content: "";
+  position: absolute; inset: 0;
+  border-radius: inherit;
+  border: 1px solid var(--line2);
+  pointer-events: none;
+}
+.board canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+.board-off {
+  display: none;
+  position: absolute; top: 10px; left: 10px;
+  align-items: center; gap: 7px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: rgba(14,13,18,0.85);
+  font-size: 13px; color: var(--text);
+  pointer-events: none;
+  z-index: 1;
+}
+.draw-hint { font-size: 13px; line-height: 1.45; color: var(--text2); }
+.swatches { display: flex; flex-wrap: wrap; gap: 10px; }   /* boutons 44px, pastilles 40px : 14px d'écart visible */
+.sw { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; }
+.sw i {
+  display: block; width: 40px; height: 40px; border-radius: 50%;
+  background: var(--c);
+  transition: box-shadow .15s ease;
+}
+.sw[aria-pressed="true"] i { box-shadow: 0 0 0 3px #0E0D12, 0 0 0 5px #FFFFFF; }
+.widths { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.wbtn {
+  height: 52px;
+  border-radius: 16px;
+  background: var(--card);
+  border: 1.5px solid var(--line);
+  display: grid; place-items: center;
+}
+.wbtn i { display: block; width: var(--d); height: var(--d); border-radius: 50%; background: #FFFFFF; }
+.wbtn[aria-pressed="true"] { border-color: var(--accent); }
+.actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.act {
+  height: 56px;
+  min-width: 0;
+  border-radius: 18px;
+  background: var(--card);
+  border: 1.5px solid var(--line);
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  padding: 0 8px;
+  font-size: 15px; font-weight: 600;
+  white-space: nowrap;
+}
+.act:active, .wbtn:active { background: var(--card-press); }
+.act[aria-pressed="true"] { border-color: var(--accent); }
+.act[aria-pressed="true"] .ic { color: var(--accent); }
+.tab-back { display: none; }
+
+/* ---------- Toast ---------- */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(env(safe-area-inset-bottom) + 24px);
+  transform: translate(-50%, 12px);
+  max-width: calc(100% - 40px);
+  width: max-content;
+  padding: 11px 16px;
+  border-radius: 999px;
+  background: #2B2834;
+  border: 1px solid rgba(255,255,255,0.10);
+  box-shadow: 0 10px 30px rgba(0,0,0,0.45);
+  color: var(--text);
+  font-size: 14px; line-height: 1.35;
+  text-align: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .2s ease, transform .2s ease;
+  z-index: 10;
+}
+.toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+/* ---------- Paysage (iPhone tourné) ---------- */
+@media (orientation: landscape) and (max-height: 560px) {
+  :root {
+    --pt: max(12px, env(safe-area-inset-top));
+    --pb: max(12px, env(safe-area-inset-bottom));
+  }
+  .app {
+    max-width: none;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) clamp(280px, 44vw, 372px);
+    grid-template-rows: auto auto 1fr;
+    column-gap: 18px;
+    row-gap: 14px;
+    align-items: start;
+  }
+  .app > .top, .app > .seg { grid-column: 2; }
+  .panel { display: contents; }
+  .stage {
+    grid-column: 1;
+    grid-row: 1 / span 3;
+    position: sticky;
+    top: var(--pt);
+    height: calc(100vh - var(--pt) - var(--pb));
+    height: calc(100dvh - var(--pt) - var(--pb));
+  }
+  .ctl { grid-column: 2; gap: 14px; }
+  #pad { height: 100% !important; }
+
+  /* Dessin : la plus grande zone 16:9 possible, outils en colonne */
+  .app[data-tab="draw"] {
+    grid-template-columns: minmax(0, 1fr) 172px;
+    grid-template-rows: minmax(0, 1fr);
+    height: 100vh;
+    height: 100dvh;
+    overflow: hidden;
+    column-gap: 14px;
+  }
+  .app[data-tab="draw"] > .top,
+  .app[data-tab="draw"] > .seg,
+  .draw-hint,
+  .draw-ctl .label { display: none; }
+  .app[data-tab="draw"] .stage {
+    grid-row: 1;
+    position: relative;
+    top: 0;
+    height: 100%;
+    align-self: stretch;
+    align-items: center;
+    justify-content: center;
+  }
+  .app.offline[data-tab="draw"] .board-off { display: flex; }
+  .draw-ctl {
+    grid-row: 1;
+    align-self: stretch;
+    height: 100%;
+    overflow-y: auto;
+    padding: 4px 4px;
+    gap: 12px;
+  }
+  .draw-ctl .group { gap: 0; }
+  .tab-back {
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+    height: 44px;
+    margin-top: auto;
+    border-radius: 14px;
+    background: var(--surface);
+    border: 1px solid var(--line2);
+    font-size: 13px; font-weight: 600;
+    color: var(--text2);
+  }
+  .tab-back .ic { width: 18px; height: 18px; }
+  .draw-ctl .actions { margin-bottom: auto; gap: 10px; }
+  .swatches { display: grid; grid-template-columns: repeat(3, 44px); justify-content: space-between; row-gap: 10px; }
+  .widths { gap: 8px; }
+  .wbtn { height: 44px; }
+  .act { height: 52px; flex-direction: column; gap: 3px; font-size: 11px; padding: 0 4px; }
+  .act .ic { width: 20px; height: 20px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; }
+}
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <symbol id="i-power" viewBox="0 0 24 24"><path d="M12 2v10"/><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/></symbol>
+  <symbol id="i-back" viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></symbol>
+  <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 10a2 2 0 0 1 .71-1.53l7-6a2 2 0 0 1 2.58 0l7 6A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/></symbol>
+  <symbol id="i-playpause" viewBox="0 0 24 24"><path d="M4 5.5v13l8.5-6.5z"/><path d="M16 6v12"/><path d="M20 6v12"/></symbol>
+  <symbol id="i-voldown" viewBox="0 0 24 24"><path d="M11 5 6 9H3v6h3l5 4z"/><path d="M16 12h5"/></symbol>
+  <symbol id="i-volup" viewBox="0 0 24 24"><path d="M11 5 6 9H3v6h3l5 4z"/><path d="M16 12h5"/><path d="M18.5 9.5v5"/></symbol>
+  <symbol id="i-keyboard" viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 8h.01"/><path d="M10 8h.01"/><path d="M14 8h.01"/><path d="M18 8h.01"/><path d="M8 12h.01"/><path d="M12 12h.01"/><path d="M16 12h.01"/><path d="M7 16h10"/></symbol>
+  <symbol id="i-del" viewBox="0 0 24 24"><path d="M10 5a2 2 0 0 0-1.34.52l-6.33 5.74a1 1 0 0 0 0 1.48l6.33 5.74A2 2 0 0 0 10 19h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2z"/><path d="m12 9 6 6"/><path d="m18 9-6 6"/></symbol>
+  <symbol id="i-headphones" viewBox="0 0 24 24"><path d="M3 14h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a9 9 0 0 1 18 0v7a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3"/></symbol>
+  <symbol id="i-eraser" viewBox="0 0 24 24"><path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21"/><path d="M22 21H7"/><path d="m5 11 9 9"/></symbol>
+  <symbol id="i-undo" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></symbol>
+  <symbol id="i-max" viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></symbol>
+  <symbol id="i-min" viewBox="0 0 24 24"><path d="M8 3v3a2 2 0 0 1-2 2H3"/><path d="M21 8h-3a2 2 0 0 1-2-2V3"/><path d="M3 16h3a2 2 0 0 1 2 2v3"/><path d="M16 21v-3a2 2 0 0 1 2-2h3"/></symbol>
+  <symbol id="i-tv" viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="15" rx="2"/><path d="m17 2-5 5-5-5"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+  <symbol id="i-share" viewBox="0 0 24 24"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><path d="m16 6-4-4-4 4"/><path d="M12 2v13"/></symbol>
+  <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></symbol>
+</svg>
+
+<!-- Association -->
+<section id="pairScreen" class="screen-center" hidden>
+  <div class="pair-box">
+    <div class="badge"><svg class="ic" aria-hidden="true"><use href="#i-tv"/></svg></div>
+    <h1 class="big-title">Associer cet iPhone</h1>
+    <p class="lead">Tape le code à 4&nbsp;chiffres affiché sur la&nbsp;TV.</p>
+    <form id="pairForm" class="pair-form" novalidate>
+      <input id="pin" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="4"
+             autocomplete="one-time-code" enterkeyhint="go" placeholder="••••"
+             aria-label="Code à 4 chiffres" aria-describedby="pairMsg">
+      <p id="pairMsg" class="msg" role="alert" aria-live="assertive"></p>
+      <button id="pairBtn" class="btn-main" type="submit">Associer</button>
+    </form>
+  </div>
+</section>
+
+<!-- Association réussie (une fois, dans Safari) -->
+<section id="welcomeScreen" class="screen-center" hidden>
+  <div class="pair-box">
+    <div class="badge ok"><svg class="ic" aria-hidden="true"><use href="#i-check"/></svg></div>
+    <h1 class="big-title">C'est associé&nbsp;!</h1>
+    <p class="lead">Pour l'ouvrir comme une app&nbsp;: touche Partager <svg class="ic" aria-hidden="true"><use href="#i-share"/></svg>, puis «&nbsp;Sur l'écran d'accueil&nbsp;».</p>
+    <div class="pair-form">
+      <button id="welcomeBtn" class="btn-main" type="button">Continuer</button>
+    </div>
+  </div>
+</section>
+
+<!-- Télécommande -->
+<main id="app" class="app" data-tab="remote" hidden>
+  <header class="top">
+    <div class="top-text">
+      <h1 id="tvName">Salon</h1>
+      <p class="status" aria-live="polite"><span id="dot" class="dot" aria-hidden="true"></span><span id="statusText">Connexion à la TV…</span></p>
+    </div>
+    <button id="sleepBtn" class="round" type="button" aria-label="Mettre la TV en veille"><svg class="ic" aria-hidden="true"><use href="#i-power"/></svg></button>
+  </header>
+
+  <div class="seg" role="tablist" aria-label="Mode">
+    <button id="tabRemote" type="button" role="tab" aria-selected="true" aria-controls="panelRemote"><span>Télécommande</span></button>
+    <button id="tabDraw" type="button" role="tab" aria-selected="false" aria-controls="panelDraw"><span>Dessin</span></button>
+  </div>
+
+  <section id="panelRemote" class="panel" role="tabpanel" aria-labelledby="tabRemote">
+    <div class="stage">
+      <div id="pad" class="pad" role="application" aria-label="Pavé tactile : glisse pour te déplacer, touche pour valider">
+        <div id="ring" class="ring"></div>
+        <p class="pad-hint">Glisse pour te déplacer<br>Touche pour valider</p>
+      </div>
+    </div>
+    <div class="ctl">
+      <div class="keys">
+        <button class="key" type="button" data-key="back"><svg class="ic" aria-hidden="true"><use href="#i-back"/></svg><span>Retour</span></button>
+        <button class="key" type="button" data-key="home"><svg class="ic" aria-hidden="true"><use href="#i-home"/></svg><span>Accueil</span></button>
+        <button class="key" type="button" data-key="playpause"><svg class="ic" aria-hidden="true"><use href="#i-playpause"/></svg><span>Lecture / Pause</span></button>
+        <button class="key" type="button" data-key="voldown" data-repeat><svg class="ic" aria-hidden="true"><use href="#i-voldown"/></svg><span>Volume −</span></button>
+        <button class="key" type="button" data-key="volup" data-repeat><svg class="ic" aria-hidden="true"><use href="#i-volup"/></svg><span>Volume +</span></button>
+        <button id="kbdBtn" class="key" type="button" aria-expanded="false" aria-controls="kbd"><svg class="ic" aria-hidden="true"><use href="#i-keyboard"/></svg><span>Clavier</span></button>
+      </div>
+
+      <form id="kbd" class="kbd" hidden>
+        <div class="kbd-row">
+          <input id="kbdInput" type="text" enterkeyhint="send" autocomplete="off" placeholder="Écris ici…" aria-label="Texte à envoyer à la TV">
+          <button class="icon-btn" type="button" data-key="del" data-repeat aria-label="Effacer une lettre"><svg class="ic" aria-hidden="true"><use href="#i-del"/></svg></button>
+        </div>
+        <div class="kbd-row">
+          <button id="kbdClose" class="btn ghost" type="button">Fermer</button>
+          <button id="kbdSend" class="btn primary" type="submit">Envoyer</button>
+        </div>
+      </form>
+
+      <button id="audioBtn" class="audio" type="button">
+        <svg class="ic" aria-hidden="true"><use href="#i-headphones"/></svg>
+        <span class="a-text"><span id="aTitle" class="a-title" style="display:block">Tes écouteurs</span><span id="aSub" class="a-sub" style="display:block" hidden></span></span>
+        <span id="aAction" class="a-action"></span>
+      </button>
+
+      <div id="appsBox" class="group">
+        <div class="label" id="appsLabel">Ouvrir</div>
+        <div id="apps" class="apps" role="group" aria-labelledby="appsLabel"></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="panelDraw" class="panel" role="tabpanel" aria-labelledby="tabDraw" hidden>
+    <div id="drawStage" class="stage">
+      <div id="board" class="board">
+        <canvas id="canvas" aria-label="Zone de dessin, affichée en direct sur la TV"></canvas>
+        <div class="board-off" aria-hidden="true"><span class="dot off"></span>TV injoignable</div>
+      </div>
+      <p class="draw-hint">Ce que tu dessines s'affiche en direct sur la TV. Tourne l'iPhone pour dessiner plus grand.</p>
+    </div>
+    <div class="ctl draw-ctl">
+      <button id="tabBack" class="tab-back" type="button"><svg class="ic" aria-hidden="true"><use href="#i-chevron"/></svg>Télécommande</button>
+      <div class="group">
+        <div class="label" id="colorLabel">Couleur</div>
+        <div class="swatches" role="group" aria-labelledby="colorLabel">
+          <button class="sw" type="button" data-color="#FFFFFF" aria-label="Blanc" aria-pressed="false"><i style="--c:#FFFFFF"></i></button>
+          <button class="sw" type="button" data-color="#FFD166" aria-label="Jaune" aria-pressed="true"><i style="--c:#FFD166"></i></button>
+          <button class="sw" type="button" data-color="#FF7A7A" aria-label="Corail" aria-pressed="false"><i style="--c:#FF7A7A"></i></button>
+          <button class="sw" type="button" data-color="#6EE7A8" aria-label="Vert" aria-pressed="false"><i style="--c:#6EE7A8"></i></button>
+          <button class="sw" type="button" data-color="#7CC4FF" aria-label="Bleu" aria-pressed="false"><i style="--c:#7CC4FF"></i></button>
+          <button class="sw" type="button" data-color="#B9A3FF" aria-label="Violet" aria-pressed="false"><i style="--c:#B9A3FF"></i></button>
+        </div>
+      </div>
+      <div class="group">
+        <div class="label" id="widthLabel">Épaisseur</div>
+        <div class="widths" role="group" aria-labelledby="widthLabel">
+          <button class="wbtn" type="button" data-w="1" aria-label="Trait fin" aria-pressed="false"><i style="--d:6px"></i></button>
+          <button class="wbtn" type="button" data-w="2" aria-label="Trait moyen" aria-pressed="true"><i style="--d:12px"></i></button>
+          <button class="wbtn" type="button" data-w="3" aria-label="Trait épais" aria-pressed="false"><i style="--d:20px"></i></button>
+        </div>
+      </div>
+      <div class="actions">
+        <button id="eraserBtn" class="act" type="button" aria-pressed="false"><svg class="ic" aria-hidden="true"><use href="#i-eraser"/></svg><span>Gomme</span></button>
+        <button id="undoBtn" class="act" type="button"><svg class="ic" aria-hidden="true"><use href="#i-undo"/></svg><span>Annuler</span></button>
+        <button id="clearBtn" class="act" type="button"><svg class="ic" aria-hidden="true"><use href="#i-trash"/></svg><span>Tout effacer</span></button>
+        <button id="fullBtn" class="act" type="button"><svg class="ic" aria-hidden="true"><use id="fullIcon" href="#i-max"/></svg><span id="fullLabel">Plein écran</span></button>
+      </div>
+    </div>
+  </section>
+</main>
+
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+<script>
+(() => {
+  'use strict';
+  const $ = (id) => document.getElementById(id);
+
+  /* ---------- Stockage local (peut être indisponible : navigation privée, etc.) ---------- */
+  const store = {
+    get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
+    set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} },
+    del(k) { try { localStorage.removeItem(k); } catch (e) {} },
+  };
+  const isStandalone = () => navigator.standalone === true ||
+    (!!window.matchMedia && matchMedia('(display-mode: standalone)').matches);
+  const landMQ = matchMedia('(orientation: landscape) and (max-height: 560px)');
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  const app = $('app');
+  let key = null;          // clé d'association
+  let running = false;     // écran télécommande actif
+  let tab = 'remote';
+  let online = null;       // null = pas encore su
+
+  // iOS n'applique :active que si un écouteur touchstart existe
+  document.addEventListener('touchstart', () => {}, { passive: true });
+
+  /* ---------- Toast ---------- */
+  const toastEl = $('toast');
+  let toastT = 0;
+  function toast(msg) {
+    toastEl.textContent = msg;
+    toastEl.classList.add('show');
+    clearTimeout(toastT);
+    toastT = setTimeout(() => toastEl.classList.remove('show'), 3000);
+  }
+  function failToast(e) {
+    if (e && e.status === 401) return;
+    toast(!e || e.status === 0 ? 'TV injoignable.' : e.message);
+  }
+
+  /* ---------- API ---------- */
+  class ApiError extends Error {
+    constructor(status, message, data) { super(message); this.status = status; this.data = data; }
+  }
+
+  async function api(method, path, body, opt = {}) {
+    const headers = {};
+    if (key && !opt.noKey) headers['X-Salon-Key'] = key;
+    if (body !== undefined) headers['Content-Type'] = 'application/json';
+    const track = !opt.noStatus;
+    const ctrl = window.AbortController ? new AbortController() : null;
+    const slowT = track ? setTimeout(() => setOnline(false), opt.slowMs || 4000) : 0;
+    const abortT = setTimeout(() => ctrl && ctrl.abort(), opt.timeout || 10000);
+    let res, text;
+    try {
+      res = await fetch(path, {
+        method, headers, cache: 'no-store',
+        body: body !== undefined ? JSON.stringify(body) : undefined,
+        signal: ctrl ? ctrl.signal : undefined,
+      });
+      text = await res.text();
+    } catch (e) {
+      clearTimeout(slowT); clearTimeout(abortT);
+      if (track) setOnline(false);
+      throw new ApiError(0, 'TV injoignable.');
+    }
+    clearTimeout(slowT); clearTimeout(abortT);
+    if (track) setOnline(true);
+    let data = {};
+    if (text) { try { data = JSON.parse(text); } catch (e) { data = {}; } }
+    if (res.status === 401 && !opt.noKey) {
+      unpair();
+      throw new ApiError(401, "Cet iPhone n'est plus associé.");
+    }
+    if (!res.ok) throw new ApiError(res.status, (data && data.error) || ('Erreur ' + res.status + ' de la TV.'), data);
+    return data || {};
+  }
+
+  /* ---------- État de connexion ---------- */
+  const dotEl = $('dot'), statusEl = $('statusText');
+  function setOnline(v) {
+    if (online === v) return;
+    const was = online;
+    online = v;
+    dotEl.className = 'dot ' + (v ? 'on' : 'off');
+    statusEl.textContent = v ? 'Connecté à la TV' : 'TV injoignable';
+    app.classList.toggle('offline', !v);
+    if (v && was === false && running) {     // de retour : on rafraîchit
+      if (!appsLoaded) loadApps();
+      if (tab === 'remote') loadAudio(); else loadBoard();
+    }
+  }
+
+  /* ---------- Écrans ---------- */
+  function show(id) {
+    for (const s of ['pairScreen', 'welcomeScreen', 'app']) $(s).hidden = (s !== id);
+  }
+
+  /* ---------- Association ---------- */
+  const pinEl = $('pin'), pairMsg = $('pairMsg'), pairBtn = $('pairBtn');
+  let pairing = false;
+  function setPairMsg(text, isErr) {
+    pairMsg.textContent = text || '';
+    pairMsg.classList.toggle('err', !!isErr);
+  }
+  function showPair(msg) {
+    show('pairScreen');
+    setPairMsg(msg || '', !!msg);
+    pinEl.value = '';
+    setTimeout(() => { try { pinEl.focus(); } catch (e) {} }, 60);
+  }
+  pinEl.addEventListener('input', () => {
+    const v = pinEl.value.replace(/\D/g, '').slice(0, 4);
+    if (v !== pinEl.value) pinEl.value = v;
+    if (v.length === 4) submitPair();
+  });
+  $('pairForm').addEventListener('submit', (e) => { e.preventDefault(); submitPair(); });
+
+  async function submitPair() {
+    if (pairing) return;
+    const pin = pinEl.value.replace(/\D/g, '');
+    if (pin.length !== 4) { setPairMsg('Le code fait 4 chiffres.', true); pinEl.focus(); return; }
+    pairing = true;
+    pairBtn.disabled = true;
+    pairBtn.textContent = 'Association…';
+    setPairMsg('', false);
+    try {
+      const r = await api('POST', '/api/pair', { pin, name: 'iPhone' }, { noKey: true, noStatus: true });
+      if (!r || !r.key) throw new ApiError(500, 'Réponse inattendue de la TV.');
+      store.set('salonKey', r.key);
+      store.del('salonBadKey');
+      location.replace('/?k=' + encodeURIComponent(r.key));
+      return;
+    } catch (e) {
+      let m = e.message;
+      if (e.status === 403) m = 'Code incorrect, réessaie.';
+      else if (e.status === 429) m = "Trop d'essais. Sur la TV, ouvre de nouveau « iPhone » pour avoir un nouveau code.";
+      else if (e.status === 0) m = 'TV injoignable. Ton iPhone est-il sur le même Wi-Fi que la TV ?';
+      setPairMsg(m, true);
+      pinEl.value = '';
+      pinEl.focus();
+    }
+    pairing = false;
+    pairBtn.disabled = false;
+    pairBtn.textContent = 'Associer';
+  }
+
+  function unpair() {
+    if (!key) return;
+    store.set('salonBadKey', key);     // pour ignorer un ancien ?k= resté dans l'URL
+    store.del('salonKey');
+    key = null;
+    stopApp();
+    try { history.replaceState(null, '', '/'); } catch (e) {}
+    toastEl.classList.remove('show');
+    showPair("Cet iPhone n'est plus associé.");
+  }
+
+  $('welcomeBtn').addEventListener('click', () => {
+    store.set('salonWelcomeShown', key);
+    startApp();
+  });
+
+  /* ---------- Démarrage / arrêt ---------- */
+  let pingT = 0, audioT = 0;
+  function startTimers() {
+    stopTimers();
+    if (!running || document.hidden) return;
+    pingT = setInterval(ping, 10000);
+    if (tab === 'remote') audioT = setInterval(loadAudio, 5000);
+  }
+  function stopTimers() { clearInterval(pingT); clearInterval(audioT); pingT = audioT = 0; }
+
+  function startApp() {
+    show('app');
+    running = true;
+    setTab(store.get('salonTab') === 'draw' ? 'draw' : 'remote');
+    ping();
+    loadApps();
+    startTimers();
+  }
+  function stopApp() {
+    running = false;
+    stopTimers();
+    audioTimers.forEach(clearTimeout); audioTimers = [];
+    keyQueue.length = 0;
+    dq = []; dEnds = [];
+  }
+
+  async function ping() {
+    if (!running) return;
+    try {
+      const r = await api('GET', '/api/info');
+      if (r && r.name) $('tvName').textContent = r.name;
+      if (!appsLoaded) loadApps();
+    } catch (e) {}
+  }
+
+  function onVisible() {
+    if (!running) return;
+    if (document.hidden) { stopTimers(); return; }
+    ping();
+    if (tab === 'remote') loadAudio(); else loadBoard();
+    startTimers();
+  }
+  document.addEventListener('visibilitychange', onVisible);
+  window.addEventListener('pageshow', (e) => { if (e.persisted) onVisible(); });
+
+  /* ---------- Onglets ---------- */
+  const tabRemote = $('tabRemote'), tabDraw = $('tabDraw');
+  const panelRemote = $('panelRemote'), panelDraw = $('panelDraw');
+  function setTab(t) {
+    const changed = t !== tab;
+    tab = t;
+    app.dataset.tab = t;
+    tabRemote.setAttribute('aria-selected', String(t === 'remote'));
+    tabDraw.setAttribute('aria-selected', String(t === 'draw'));
+    panelRemote.hidden = t !== 'remote';
+    panelDraw.hidden = t !== 'draw';
+    store.set('salonTab', t);
+    if (changed) window.scrollTo(0, 0);
+    if (t === 'remote') { fitPad(); loadAudio(); }
+    else { fitBoard(); loadBoard(); }
+    startTimers();
+  }
+  tabRemote.addEventListener('click', () => { if (tab !== 'remote') setTab('remote'); });
+  tabDraw.addEventListener('click', () => { if (tab !== 'draw') setTab('draw'); });
+  $('tabBack').addEventListener('click', () => setTab('remote'));
+
+  /* ---------- Touches : une seule requête /api/key à la fois ---------- */
+  const keyQueue = [];
+  let keyBusy = false;
+  function sendKey(k) {
+    if (!running) return;
+    keyQueue.push({ k, t: Date.now() });
+    flushKeys();
+  }
+  async function flushKeys() {
+    if (keyBusy || !running) return;
+    const now = Date.now();
+    // on oublie les touches trop vieilles (TV lente/injoignable) pour éviter une rafale plus tard
+    const keys = keyQueue.splice(0).filter((x) => now - x.t < 3000).map((x) => x.k);
+    if (!keys.length) return;
+    keyBusy = true;
+    try { await api('POST', '/api/key', { keys }); }
+    catch (e) { failToast(e); }
+    keyBusy = false;
+    if (keyQueue.length) flushKeys();
+  }
+
+  // Boutons simples et boutons à répétition (volume, effacer) quand on reste appuyé
+  document.querySelectorAll('[data-key]').forEach((b) => {
+    const k = b.dataset.key;
+    if (!b.hasAttribute('data-repeat')) { b.addEventListener('click', () => sendKey(k)); return; }
+    let holdT = 0, repT = 0, repeated = false, suppressClick = false, resetT = 0;
+    const stop = () => { clearTimeout(holdT); clearInterval(repT); holdT = repT = 0; };
+    b.addEventListener('pointerdown', (e) => {
+      if (e.button > 0) return;
+      stop();
+      repeated = false;
+      suppressClick = true;
+      clearTimeout(resetT);
+      holdT = setTimeout(() => {
+        repeated = true;
+        sendKey(k);
+        repT = setInterval(() => sendKey(k), 150);
+      }, 420);
+    });
+    b.addEventListener('pointerup', () => {
+      const wasHolding = holdT || repT;
+      stop();
+      if (wasHolding && !repeated) sendKey(k);
+      resetT = setTimeout(() => { suppressClick = false; }, 400);
+    });
+    const cancel = () => { stop(); resetT = setTimeout(() => { suppressClick = false; }, 400); };
+    b.addEventListener('pointercancel', cancel);
+    b.addEventListener('pointerleave', cancel);
+    b.addEventListener('contextmenu', (e) => e.preventDefault());
+    b.addEventListener('click', () => {   // clavier / VoiceOver
+      if (suppressClick) return;
+      sendKey(k);
+    });
+  });
+
+  $('sleepBtn').addEventListener('click', () => {
+    sendKey('sleep');
+    toast('La TV se met en veille.');
+  });
+
+  /* ---------- Pavé tactile ---------- */
+  const pad = $('pad'), ring = $('ring');
+  const STEP = 46;
+  const NUDGE = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] };
+  let padId = null, sx = 0, sy = 0, st = 0, lx = 0, ly = 0, ax = 0, ay = 0, maxD = 0, padSent = false, nudgeT = 0;
+
+  function padKey(k) {
+    sendKey(k);
+    const d = NUDGE[k];
+    if (d) padSent = true;
+    ring.style.transform = d ? `translate(${d[0] * 18}px, ${d[1] * 18}px)` : 'scale(.84)';
+    clearTimeout(nudgeT);
+    nudgeT = setTimeout(() => { ring.style.transform = ''; }, 130);
+  }
+  pad.addEventListener('pointerdown', (e) => {
+    if (padId !== null) return;
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    padId = e.pointerId;
+    try { pad.setPointerCapture(e.pointerId); } catch (err) {}
+    sx = lx = e.clientX; sy = ly = e.clientY;
+    st = performance.now();
+    ax = ay = maxD = 0;
+    padSent = false;
+    pad.classList.add('active');
+  });
+  pad.addEventListener('pointermove', (e) => {
+    if (e.pointerId !== padId) return;
+    ax += e.clientX - lx; ay += e.clientY - ly;
+    lx = e.clientX; ly = e.clientY;
+    maxD = Math.max(maxD, Math.hypot(e.clientX - sx, e.clientY - sy));
+    // une flèche tous les 46px sur l'axe dominant ; l'autre axe est amorti pour éviter la dérive
+    for (let i = 0; i < 30; i++) {
+      if (Math.abs(ax) >= Math.abs(ay)) {
+        if (Math.abs(ax) < STEP) break;
+        const s = Math.sign(ax);
+        ax -= s * STEP; ay *= 0.5;
+        padKey(s > 0 ? 'right' : 'left');
+      } else {
+        if (Math.abs(ay) < STEP) break;
+        const s = Math.sign(ay);
+        ay -= s * STEP; ax *= 0.5;
+        padKey(s > 0 ? 'down' : 'up');
+      }
+    }
+  });
+  function endPad(e, cancelled) {
+    if (e.pointerId !== padId) return;
+    padId = null;
+    pad.classList.remove('active');
+    if (!cancelled && !padSent && performance.now() - st < 250 && maxD < 12) padKey('ok');
+  }
+  pad.addEventListener('pointerup', (e) => endPad(e, false));
+  pad.addEventListener('pointercancel', (e) => endPad(e, true));
+  pad.addEventListener('lostpointercapture', (e) => endPad(e, true));
+
+  /* ---------- Clavier ---------- */
+  const kbd = $('kbd'), kbdBtn = $('kbdBtn'), kbdInput = $('kbdInput');
+  let textBusy = false;
+  function setKbd(open) {
+    kbd.hidden = !open;
+    kbdBtn.setAttribute('aria-expanded', String(open));
+    if (open) {
+      kbdInput.focus();
+      requestAnimationFrame(() => kbd.scrollIntoView({ block: 'nearest' }));
+    } else {
+      kbdInput.blur();
+    }
+  }
+  kbdBtn.addEventListener('click', () => setKbd(kbd.hidden));
+  $('kbdClose').addEventListener('click', () => setKbd(false));
+  kbd.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const text = kbdInput.value;
+    if (!text || textBusy) return;
+    textBusy = true;
+    try {
+      await api('POST', '/api/text', { text });
+      if (kbdInput.value === text) kbdInput.value = '';
+    } catch (err) { failToast(err); }
+    textBusy = false;
+  });
+
+  /* ---------- Écouteurs ---------- */
+  const audioBtn = $('audioBtn'), aTitle = $('aTitle'), aSub = $('aSub'), aAction = $('aAction');
+  let audio = null;          // dernière réponse GET /api/audio
+  let audioBusy = null;      // { action, address, until }
+  let audioTimers = [];
+
+  async function loadAudio() {
+    if (!running) return;
+    try {
+      const r = await api('GET', '/api/audio');
+      audio = r || {};
+    } catch (e) {
+      if (e.status === 401) return;
+      if (e.status !== 0) audio = { devices: [], ok: false, error: e.message };
+    }
+    renderAudio();
+  }
+  function audioDevices() { return audio && Array.isArray(audio.devices) ? audio.devices.filter(Boolean) : []; }
+  function pickDevice() { const d = audioDevices(); return d.find((x) => x.connected) || d[0] || null; }
+  function renderAudio() {
+    const dev = pickDevice();
+    let title = 'Tes écouteurs', sub = '', action = '', busy = false, subOn = false;
+    if (audio && !dev) {
+      if (audio.ok === false && audio.error) { title = 'Écouteurs'; sub = audio.error; }
+      else title = 'Aucun casque associé';
+    } else if (dev) {
+      title = dev.name || 'Tes écouteurs';
+      const p = audioBusy;
+      const pending = p && p.address === dev.address && Date.now() < p.until &&
+        ((p.action === 'connect') !== !!dev.connected);
+      if (pending) { action = p.action === 'connect' ? 'Connexion…' : 'Déconnexion…'; busy = true; }
+      else if (dev.connected) { sub = 'Connectés'; subOn = true; action = 'Déconnecter'; }
+      else action = 'Connecter';
+    }
+    aTitle.textContent = title;
+    aSub.textContent = sub;
+    aSub.hidden = !sub;
+    aSub.classList.toggle('on', subOn);
+    aAction.textContent = action;
+    aAction.hidden = !action;
+    aAction.classList.toggle('busy', busy);
+    audioBtn.setAttribute('aria-label', [title, sub, action].filter(Boolean).join(', '));
+    audioBtn.setAttribute('aria-busy', String(busy));
+  }
+  audioBtn.addEventListener('click', async () => {
+    if (!audio) { loadAudio(); return; }
+    const dev = pickDevice();
+    if (!dev) {
+      toast(audio.ok === false && audio.error ? audio.error
+        : 'Associe-les une fois dans Paramètres › Télécommandes et accessoires de la TV');
+      return;
+    }
+    if (audioBusy && Date.now() < audioBusy.until) return;
+    const action = dev.connected ? 'disconnect' : 'connect';
+    audioBusy = { action, address: dev.address, until: Date.now() + 15000 };
+    renderAudio();
+    try {
+      // la connexion Bluetooth peut être lente : pas de « TV injoignable » avant 12 s
+      const r = await api('POST', '/api/audio', { action, address: dev.address }, { slowMs: 12000, timeout: 15000 });
+      if (r && Array.isArray(r.devices)) audio = r;
+      if (r && r.ok === false) { audioBusy = null; toast(r.error || 'Impossible de changer la connexion.'); }
+      else audioBusy.until = Date.now() + 5500;
+    } catch (e) {
+      audioBusy = null;
+      failToast(e);
+    }
+    renderAudio();
+    audioTimers.forEach(clearTimeout);
+    audioTimers = [setTimeout(loadAudio, 2000), setTimeout(loadAudio, 5000), setTimeout(renderAudio, 5700)];
+  });
+  renderAudio();
+
+  /* ---------- Applis ---------- */
+  const appsBox = $('appsBox'), appsGrid = $('apps');
+  let appsLoaded = false;
+  async function loadApps() {
+    if (!running) return;
+    try {
+      const r = await api('GET', '/api/apps');
+      appsLoaded = true;
+      renderApps(Array.isArray(r.apps) ? r.apps : []);
+    } catch (e) {}
+  }
+  function renderApps(list) {
+    list = list.filter((a) => a && a.pkg).slice(0, 8);
+    appsGrid.textContent = '';
+    for (const a of list) {
+      const label = a.label || a.pkg;
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'chip';
+      b.textContent = label;
+      b.title = label;
+      b.setAttribute('aria-label', 'Ouvrir ' + label);
+      b.addEventListener('click', () => openApp(a.pkg));
+      appsGrid.appendChild(b);
+    }
+    appsBox.hidden = !list.length;
+    fitPad();
+  }
+  async function openApp(pkg) {
+    try {
+      const r = await api('POST', '/api/open', { pkg });
+      if (r && r.ok === false) toast(r.error || "Impossible d'ouvrir l'appli.");
+    } catch (e) { failToast(e); }
+  }
+
+  /* ---------- Dessin ---------- */
+  const board = $('board'), canvas = $('canvas'), stageEl = $('drawStage');
+  const ctx = canvas.getContext('2d');
+  const WF = { 1: 0.005, 2: 0.010, 3: 0.020 };     // épaisseur en fraction de la largeur
+  let strokes = [];         // { id, c, w, e, p:[x,y,...], _n }
+  let current = null;       // trait en cours
+  let drawPtr = null, rect = null, seq = 0;
+  let color = '#FFD166', width = 2, eraser = false, full = false;
+  let cssW = 0, cssH = 0;
+
+  const r4 = (v) => Math.round(Math.min(1, Math.max(0, v)) * 10000) / 10000;
+  function rid() {
+    const abc = 'abcdefghijklmnopqrstuvwxyz0123456789';
+    let bytes = null;
+    try { bytes = crypto.getRandomValues(new Uint8Array(8)); } catch (e) {}
+    let s = '';
+    for (let i = 0; i < 8; i++) s += abc[(bytes ? bytes[i] : (Math.random() * 256) | 0) % 36];
+    return s;
+  }
+
+  function fitBoard() {
+    if (panelDraw.hidden || !running) return;
+    let w = stageEl.clientWidth;
+    if (landMQ.matches) w = Math.min(w, stageEl.clientHeight * 16 / 9);
+    w = Math.max(80, Math.floor(w));
+    const h = Math.round(w * 9 / 16);
+    board.style.width = w + 'px';
+    board.style.height = h + 'px';
+    const dpr = Math.min(window.devicePixelRatio || 1, 3);
+    const pw = Math.round(w * dpr), ph = Math.round(h * dpr);
+    if (canvas.width !== pw || canvas.height !== ph || cssW !== w) {
+      canvas.width = pw; canvas.height = ph;
+      cssW = w; cssH = h;
+      ctx.setTransform(pw / w, 0, 0, ph / h, 0, 0);
+      redraw();
+    }
+  }
+
+  function applyStyle(s) {
+    ctx.globalCompositeOperation = s.e ? 'destination-out' : 'source-over';
+    ctx.strokeStyle = ctx.fillStyle = s.e ? '#000' : s.c;
+    ctx.lineWidth = (WF[s.w] || WF[2]) * (s.e ? 3 : 1) * cssW;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+  }
+  function drawDot(s, x, y) {
+    applyStyle(s);
+    ctx.beginPath();
+    ctx.arc(x * cssW, y * cssH, ctx.lineWidth / 2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  function drawSeg(s, x0, y0, x1, y1) {
+    applyStyle(s);
+    ctx.beginPath();
+    ctx.moveTo(x0 * cssW, y0 * cssH);
+    ctx.lineTo(x1 * cssW, y1 * cssH);
+    ctx.stroke();
+  }
+  function drawStroke(s) {
+    const p = s.p;
+    if (p.length < 2) return;
+    if (p.length < 4) { drawDot(s, p[0], p[1]); return; }
+    applyStyle(s);
+    ctx.beginPath();
+    ctx.moveTo(p[0] * cssW, p[1] * cssH);
+    for (let i = 2; i + 1 < p.length; i += 2) ctx.lineTo(p[i] * cssW, p[i + 1] * cssH);
+    ctx.stroke();
+  }
+  function redraw() {
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.restore();
+    for (const s of strokes) drawStroke(s);
+    ctx.globalCompositeOperation = 'source-over';
+  }
+  function normStroke(s) {
+    return {
+      id: String(s.id || rid()),
+      c: typeof s.c === 'string' ? s.c : '#FFFFFF',
+      w: WF[s.w] ? +s.w : 2,
+      e: !!s.e,
+      p: Array.isArray(s.p) ? s.p.map(Number).filter((v) => isFinite(v)) : [],
+      _n: 0,
+    };
+  }
+  // Remplace par la liste de la TV, en gardant les traits commencés après `since`
+  function applyServerStrokes(list, since) {
+    const ids = new Set(list.map((s) => String(s && s.id)));
+    const extra = strokes.filter((s) => s._n > since && !ids.has(s.id));
+    strokes = list.filter(Boolean).map(normStroke).concat(extra);
+    for (const s of strokes) if (!s._n) acked.add(s.id);
+    redraw();
+  }
+
+  /* Envoi en continu vers la TV */
+  let dq = [];              // [{ id, s, p:[...] }] points pas encore envoyés
+  let dEnds = [];           // ids des traits terminés
+  const acked = new Set();  // traits dont c/w/e ont déjà été reçus
+  let drawInFlight = false, drawTimer = 0, drawNextAt = 0, drawPaused = false;
+
+  function queuePoints(s, pts) {
+    const last = dq[dq.length - 1];
+    if (last && last.id === s.id) last.p.push(...pts);
+    else dq.push({ id: s.id, s, p: pts.slice() });
+    scheduleDraw();
+  }
+  function scheduleDraw() {
+    if (drawTimer || drawInFlight || drawPaused || !running) return;
+    if (!dq.length && !dEnds.length) return;
+    drawTimer = setTimeout(() => { drawTimer = 0; flushDraw(); }, Math.max(0, drawNextAt - Date.now()));
+  }
+  function mergeOps(list) {
+    const out = [];
+    for (const o of list) {
+      const last = out[out.length - 1];
+      if (last && last.id === o.id) last.p = last.p.concat(o.p);
+      else out.push({ id: o.id, s: o.s, p: o.p.slice() });
+    }
+    return out;
+  }
+  async function flushDraw() {
+    if (drawInFlight || drawPaused || !running || (!dq.length && !dEnds.length)) return;
+    const ops = dq; const ends = dEnds;
+    dq = []; dEnds = [];
+    drawInFlight = true;
+    drawNextAt = Date.now() + 40;
+    const payload = {
+      ops: ops.map((o) => acked.has(o.id) ? { id: o.id, p: o.p }
+        : { id: o.id, c: o.s.c, w: o.s.w, e: o.s.e, p: o.p }),
+      end: ends,
+    };
+    try {
+      const r = await api('POST', '/api/draw', payload);
+      ops.forEach((o) => acked.add(o.id));
+      if (r && typeof r.full === 'boolean') setFull(r.full);
+    } catch (e) {
+      if (e.status === 401) { drawInFlight = false; return; }
+      if (e.status === 0 || e.status >= 500 || e.status === 408 || e.status === 429) {
+        // on ne perd aucun point : retour en tête de file, nouvel essai dans 500 ms
+        dq = mergeOps(ops.concat(dq));
+        dEnds = ends.concat(dEnds);
+        drawNextAt = Date.now() + 500;
+      }
+    }
+    drawInFlight = false;
+    scheduleDraw();
+  }
+  async function drainDraw(maxMs) {
+    const t0 = Date.now();
+    while ((dq.length || dEnds.length || drawInFlight) && Date.now() - t0 < maxMs) await sleep(40);
+  }
+
+  function pointAt(e) {
+    return [r4((e.clientX - rect.left) / rect.width), r4((e.clientY - rect.top) / rect.height)];
+  }
+  canvas.addEventListener('pointerdown', (e) => {
+    if (drawPtr !== null) return;
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    e.preventDefault();
+    drawPtr = e.pointerId;
+    try { canvas.setPointerCapture(e.pointerId); } catch (err) {}
+    rect = canvas.getBoundingClientRect();
+    const [x, y] = pointAt(e);
+    current = { id: rid(), c: color, w: width, e: eraser, p: [x, y], _n: ++seq };
+    strokes.push(current);
+    drawDot(current, x, y);
+    queuePoints(current, [x, y]);
+  });
+  canvas.addEventListener('pointermove', (e) => {
+    if (e.pointerId !== drawPtr || !current) return;
+    const evs = (e.getCoalescedEvents && e.getCoalescedEvents()) || [];
+    const list = evs.length ? evs : [e];
+    const p = current.p;
+    const fresh = [];
+    for (const ev of list) {
+      const [x, y] = pointAt(ev);
+      const lx2 = p[p.length - 2], ly2 = p[p.length - 1];
+      if (Math.hypot((x - lx2) * cssW, (y - ly2) * cssH) < 1.5) continue;   // ignore les micro-mouvements
+      p.push(x, y);
+      fresh.push(x, y);
+      drawSeg(current, lx2, ly2, x, y);
+    }
+    if (fresh.length) queuePoints(current, fresh);
+  });
+  function endStroke(e) {
+    if (e.pointerId !== drawPtr) return;
+    drawPtr = null;
+    if (current) { dEnds.push(current.id); current = null; scheduleDraw(); }
+  }
+  canvas.addEventListener('pointerup', endStroke);
+  canvas.addEventListener('pointercancel', endStroke);
+  canvas.addEventListener('lostpointercapture', endStroke);
+
+  async function loadBoard() {
+    if (!running || tab !== 'draw') return;
+    if (dq.length || dEnds.length || drawInFlight || current) return;
+    const since = seq;
+    try {
+      const r = await api('GET', '/api/board');
+      if (typeof r.full === 'boolean') setFull(r.full);
+      if (Array.isArray(r.strokes) && !dq.length && !drawInFlight) applyServerStrokes(r.strokes, since);
+    } catch (e) {}
+  }
+
+  let boardActing = false;
+  async function boardAction(action) {
+    if (boardActing || !running) return;
+    boardActing = true;
+    try {
+      await drainDraw(2500);          // les traits d'abord, puis l'action
+      drawPaused = true;
+      const since = seq;
+      const r = await api('POST', '/api/board', { action });
+      if (r && typeof r.full === 'boolean') setFull(r.full);
+      if (action === 'undo') {
+        if (r && Array.isArray(r.strokes)) applyServerStrokes(r.strokes, since);
+        else {
+          for (let i = strokes.length - 1; i >= 0; i--) if (strokes[i]._n <= since) { strokes.splice(i, 1); break; }
+          redraw();
+        }
+      } else if (action === 'clear') {
+        strokes = strokes.filter((s) => s._n > since);
+        dq = dq.filter((o) => o.s._n > since);
+        redraw();
+      }
+    } catch (e) { failToast(e); }
+    drawPaused = false;
+    boardActing = false;
+    scheduleDraw();
+  }
+
+  function setFull(f) {
+    full = !!f;
+    $('fullLabel').textContent = full ? 'Réduire' : 'Plein écran';
+    $('fullIcon').setAttribute('href', full ? '#i-min' : '#i-max');
+  }
+
+  // Couleurs, épaisseurs, gomme
+  const swatches = Array.from(document.querySelectorAll('.sw'));
+  const wbtns = Array.from(document.querySelectorAll('.wbtn'));
+  const eraserBtn = $('eraserBtn');
+  function setEraser(on) {
+    eraser = on;
+    eraserBtn.setAttribute('aria-pressed', String(on));
+  }
+  swatches.forEach((b) => b.addEventListener('click', () => {
+    color = b.dataset.color;
+    swatches.forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+    setEraser(false);
+  }));
+  wbtns.forEach((b) => b.addEventListener('click', () => {
+    width = +b.dataset.w;
+    wbtns.forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+  }));
+  eraserBtn.addEventListener('click', () => setEraser(!eraser));
+  $('undoBtn').addEventListener('click', () => boardAction('undo'));
+  $('clearBtn').addEventListener('click', () => boardAction('clear'));
+  $('fullBtn').addEventListener('click', () => boardAction('full'));
+
+  // Pas de défilement, de rebond ni de zoom sur le pavé et la zone de dessin
+  for (const el of [pad, board]) {
+    el.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
+    el.addEventListener('touchstart', (e) => { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });
+    el.addEventListener('gesturestart', (e) => e.preventDefault());
+    el.addEventListener('gesturechange', (e) => e.preventDefault());
+    el.addEventListener('contextmenu', (e) => e.preventDefault());
+  }
+
+  /* ---------- Mise en page ---------- */
+  const padEl = pad;
+  // Portrait : le pavé fait ~280px, ajusté (200–300px) pour que tout tienne à l'écran si possible
+  function fitPad() {
+    if (!running || panelRemote.hidden) return;
+    if (landMQ.matches) { padEl.style.height = ''; return; }
+    padEl.style.height = '280px';
+    const vh = document.documentElement.clientHeight;
+    const others = app.offsetHeight - 280;
+    const avail = vh - others;
+    padEl.style.height = (avail >= 200 ? Math.min(avail, 300) : 280) + 'px';
+  }
+  let lastW = 0, lastH = 0, resizeRaf = 0;
+  function onResize() {
+    resizeRaf = 0;
+    if (!running) return;
+    const w = window.innerWidth, h = document.documentElement.clientHeight;
+    if (w !== lastW || Math.abs(h - lastH) > 100) { fitPad(); lastW = w; lastH = h; }
+    fitBoard();
+  }
+  window.addEventListener('resize', () => { if (!resizeRaf) resizeRaf = requestAnimationFrame(onResize); });
+  const onMQ = () => { lastW = 0; onResize(); };
+  if (landMQ.addEventListener) landMQ.addEventListener('change', onMQ); else if (landMQ.addListener) landMQ.addListener(onMQ);
+
+  /* ---------- Lancement ---------- */
+  const urlKey = new URLSearchParams(location.search).get('k');
+  if (urlKey && urlKey !== store.get('salonBadKey')) {
+    key = urlKey;
+    store.set('salonKey', urlKey);
+  } else {
+    key = store.get('salonKey');
+  }
+  if (!key) {
+    showPair('');
+  } else if (urlKey === key && !isStandalone() && store.get('salonWelcomeShown') !== key) {
+    show('welcomeScreen');
+  } else {
+    startApp();
+  }
+})();
+</script>
+</body>
+</html>

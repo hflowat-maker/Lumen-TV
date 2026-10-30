@@ -55,6 +55,7 @@ import androidx.compose.ui.unit.dp
 import androidx.tv.material3.Icon
 import androidx.tv.material3.Text
 import app.lumen.tv.CrashReport
+import app.lumen.tv.SalonLink
 import app.lumen.tv.data.ContentType
 import app.lumen.tv.data.GridTarget
 import app.lumen.tv.data.Shelf
@@ -119,10 +120,39 @@ class AppController(val repo: Repo, val prefs: Prefs, val preview: LivePreview) 
         stack.add(s)
     }
 
+    /** Rend la main à Salon (l'écran d'accueil) : MainActivity passe la tâche de Lumen à l'arrière-plan. */
+    var exitToSalon: (() -> Unit)? = null
+
     fun back(): Boolean {
         if (stack.size <= 1) return false
         stack.removeAt(stack.lastIndex)
+        // Ouvert depuis Salon (une fiche, une chaîne) : Retour depuis ce premier écran revient à l'accueil.
+        if (stack.size == 1 && SalonLink.fromSalon) {
+            SalonLink.leftSalon()
+            exitToSalon?.invoke()
+        }
         return true
+    }
+
+    /** Ouvre ce que Salon a demandé, par-dessus l'accueil de Lumen, avec le filtre du profil actif. */
+    suspend fun openFromSalon(r: SalonLink.Request, context: android.content.Context) {
+        val target: Screen? = when (r) {
+            is SalonLink.Title -> repo.salonTile(r.type, r.id)?.let {
+                if (it.type == ContentType.SERIES) Screen.Series(it) else Screen.Movie(it)
+            }
+            is SalonLink.Live -> {
+                val channels = repo.salonChannels(r.list)
+                val at = channels.indexOfFirst { it.id == r.id }
+                if (at >= 0) Screen.Player(PlayRequest.Live(channels, at)) else null
+            }
+        }
+        reset(Screen.Hub)
+        if (target != null) {
+            push(target)
+        } else {
+            SalonLink.leftSalon()
+            Toast.makeText(context, "Ce titre n'est pas disponible sur ce profil", Toast.LENGTH_SHORT).show()
+        }
     }
 
     fun reset(s: Screen) {
@@ -164,6 +194,18 @@ fun AppRoot(app: AppController) {
 
     val context = LocalContext.current
     var crash by remember { mutableStateOf(CrashReport.read(context)) }
+
+    // Salon (l'écran d'accueil) a demandé un film, une série ou une chaîne : ouvert dès qu'un profil est actif
+    // (après « Qui regarde ? » ou son code si le profil en a un).
+    val salonLink by SalonLink.pending.collectAsState()
+    val profile by app.repo.profile.collectAsState()
+    val ready = profile != null && screen !is Screen.Splash && screen !is Screen.Login && screen !is Screen.Sync &&
+        screen !is Screen.Profiles && screen !is Screen.ProfileEdit
+    LaunchedEffect(salonLink, ready) {
+        if (salonLink == null || !ready) return@LaunchedEffect
+        val r = SalonLink.take() ?: return@LaunchedEffect
+        app.openFromSalon(r, context)
+    }
 
     Box(Modifier.fillMaxSize().background(C.backdrop)) {
         holder.SaveableStateProvider(stateKey) {

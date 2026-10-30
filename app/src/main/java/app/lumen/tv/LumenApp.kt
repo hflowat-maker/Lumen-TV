@@ -25,6 +25,10 @@ class LumenApp : Application(), ImageLoaderFactory {
 
     override fun onCreate() {
         super.onCreate()
+        // Salon (l'écran d'accueil) : ses réglages dans tous les processus ; dans les siens (:home, :keys), rien
+        // d'autre (le lecteur, la base et le réseau de Lumen n'y servent pas).
+        io.freemytv.App.init(this)
+        if (io.freemytv.App.isSalonProcess()) return
         CrashReport.install(this)
         prefs = Prefs(this)
         http = OkHttpClient.Builder()

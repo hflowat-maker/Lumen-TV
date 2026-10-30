@@ -7,3 +7,7 @@
 -dontwarn org.conscrypt.**
 -dontwarn org.bouncycastle.**
 -dontwarn org.openjsse.**
+
+# Salon (l'écran d'accueil, classes io.freemytv) : lancé aussi par app_process (BtShell) et par le système par nom
+-keep class io.freemytv.** { *; }
+-keep class io.nayuki.** { *; }

@@ -77,6 +77,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Text
+import app.lumen.tv.SalonLink
 import app.lumen.tv.CrashReport
 import app.lumen.tv.R
 import app.lumen.tv.data.SyncProgress
@@ -163,6 +164,17 @@ fun IntroScreen(app: AppController) {
     // Mise à jour de la playlist pendant l'animation.
     LaunchedEffect(attempt) {
         failure = null
+        // Ouvert par Salon (l'écran d'accueil) sur un titre ou une chaîne : sans attendre l'animation ni la mise à
+        // jour, sur le profil actif s'il n'a pas de code (sinon « Qui regarde ? » comme d'habitude).
+        if (attempt == 0 && hasAccount && SalonLink.pending.value != null && repo.hasCatalog()) {
+            val p = repo.restoreProfile()
+            if (p != null && p.pin == null) {
+                leaving = true
+                if (repo.catalogIsStale()) repo.syncInBackground()
+                app.reset(Screen.Hub)
+                return@LaunchedEffect
+            }
+        }
         if (!hasAccount) {
             delay(1800)
             leave()

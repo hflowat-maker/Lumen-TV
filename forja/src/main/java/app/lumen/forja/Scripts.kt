@@ -115,12 +115,14 @@ object Scripts {
     if (!el || !el.getBoundingClientRect) return false;
     var r = el.getBoundingClientRect();
     if (r.width < 8 || r.height < 8) return false;
-    if (r.right <= 0 || r.bottom <= 0 || r.left >= window.innerWidth || r.top >= window.innerHeight) return false;
+    if (r.left < -4 || r.top < -4 || r.right > window.innerWidth + 4 || r.bottom > window.innerHeight + 4) return false;
     for (var a = el; a && a !== document.documentElement; a = a.parentElement){
       var st = getComputedStyle(a);
       if (st.display === 'none' || st.visibility === 'hidden' || parseFloat(st.opacity) < 0.05) return false;
     }
-    return true;
+    // Pas caché derrière autre chose (ex. : pied de page du site sous la vidéo).
+    var hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+    return !!hit && (hit === el || el.contains(hit));
   }
   function label(el){
     return (el.getAttribute('aria-label') || el.getAttribute('title') || el.innerText || el.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 40);
@@ -131,6 +133,9 @@ object Scripts {
     if (/picture|pip|live-sync/i.test(label(el) + ' ' + cls)) return true;
     var role = el.getAttribute('role');
     if (role === 'slider' || role === 'progressbar' || el.type === 'range') return true;
+    // Liens vers d'autres pages (pied de page, conditions…) et affichage du temps : ignorés.
+    if (el.tagName === 'A'){ var h = el.getAttribute('href') || ''; if (h && h.charAt(0) !== '#' && h.indexOf('javascript') !== 0) return true; }
+    if (/^\d{1,2}:\d{2}/.test(label(el))) return true;
     if (el.getAttribute('tabindex') === '-1' && el.tagName !== 'BUTTON' && !role) return true;
     var r = el.getBoundingClientRect();
     return r.width * r.height > window.innerWidth * window.innerHeight * 0.3;
@@ -213,7 +218,10 @@ object Scripts {
     var p = document.querySelector('.eb-player');
     if (!p) return;
     var r = p.getBoundingClientRect();
-    try { p.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 })); } catch(e){}
+    var o = { bubbles: true, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 };
+    // Le lecteur de Forja affiche ses commandes sur « pointermove ».
+    try { p.dispatchEvent(new PointerEvent('pointermove', o)); } catch(e){}
+    try { p.dispatchEvent(new MouseEvent('mousemove', o)); } catch(e){}
   }
   function pick(list){ return list.length ? preferred(list) : null; }
   window.__ftvNav = {

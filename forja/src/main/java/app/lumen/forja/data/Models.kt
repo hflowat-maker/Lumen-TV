@@ -36,6 +36,8 @@ data class Detail(
     val genres: List<String>,
     val cast: List<String>,
     val similar: List<Item>,
+    /** Publicité d'avant-vidéo de Forja (adresse VAST prête à l'emploi), comme sur le site. */
+    val adTag: String?,
 ) {
     val allEpisodes: List<Episode> get() = seasons.flatMap { it.episodes }
 }

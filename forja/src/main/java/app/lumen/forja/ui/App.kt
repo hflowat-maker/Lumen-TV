@@ -85,16 +85,16 @@ class AppController(val activity: Activity) {
 
     // ---------------------------------------------------------------- lecture
 
-    fun playEpisodes(show: Item, episodes: List<Episode>, index: Int, startSecs: Long) {
+    fun playEpisodes(show: Item, episodes: List<Episode>, index: Int, startSecs: Long, adTag: String? = null) {
         val queue = episodes.map { ep ->
             Playable(ep.id, ep.slug, Txt.episodeLabel(ep.number, ep.title), show.title, ep.image ?: show.tile, ep.durationSecs)
         }
-        PlayerActivity.start(activity, queue, index, startSecs, show.slug, show.title, show.wide ?: show.tile)
+        PlayerActivity.start(activity, queue, index, startSecs, show.slug, show.title, show.wide ?: show.tile, adTag)
     }
 
-    fun playFilm(item: Item, startSecs: Long) {
+    fun playFilm(item: Item, startSecs: Long, adTag: String? = null) {
         val queue = listOf(Playable(item.id, item.slug, item.title, null, item.wide ?: item.tile, item.durationSecs))
-        PlayerActivity.start(activity, queue, 0, startSecs, null, item.title, item.wide ?: item.tile)
+        PlayerActivity.start(activity, queue, 0, startSecs, null, item.title, item.wide ?: item.tile, adTag)
     }
 
     /** Reprend depuis « Continuer à regarder » : la vidéo en cours, ou l'épisode suivant. */
@@ -103,7 +103,7 @@ class AppController(val activity: Activity) {
         if (showSlug == null) {
             val start = if (p.finished) 0L else p.position
             val queue = listOf(Playable(p.id, p.slug, p.showTitle, null, p.image, p.duration.toInt()))
-            PlayerActivity.start(activity, queue, 0, start, null, p.showTitle, p.image)
+            PlayerActivity.start(activity, queue, 0, start, null, p.showTitle, p.image, null)
             return
         }
         scope.launch {
@@ -120,7 +120,7 @@ class AppController(val activity: Activity) {
                 return@launch
             }
             val start = if (!p.finished && targetId == p.id) p.position else 0L
-            playEpisodes(detail.item, episodes, index, start)
+            playEpisodes(detail.item, episodes, index, start, detail.adTag)
         }
     }
 }

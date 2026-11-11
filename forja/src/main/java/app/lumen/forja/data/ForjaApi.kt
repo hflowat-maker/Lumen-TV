@@ -127,7 +127,37 @@ object ForjaApi {
             genres = genres.distinct(),
             cast = cast.distinct(),
             similar = parseItems(o.optJSONArray("similars")).filter { it.slug != item.slug },
+            adTag = parseAdTag(o.optJSONArray("ads"), item.slug),
         )
+    }
+
+    /** Adresse de la vidéo (HLS), telle que le site la demande avant de lancer son lecteur. */
+    suspend fun streamUrl(id: Int): String? = withContext(Dispatchers.IO) {
+        val url = "$BASE/proxy/content/$id/stream_url".toHttpUrl().newBuilder()
+            .addQueryParameter("lang", "fr")
+            .addQueryParameter("mode", "link")
+            .build()
+        http.newCall(Request.Builder().url(url).build()).execute().use { res ->
+            if (!res.isSuccessful) return@withContext null
+            val body = res.body?.string()?.trim().orEmpty().trim('"')
+            body.takeIf { it.startsWith("http") }
+        }
+    }
+
+    /** Publicité VAST de Forja : on complète les champs à remplir comme le fait le site. */
+    private fun parseAdTag(ads: JSONArray?, slug: String): String? {
+        if (ads == null) return null
+        for (i in 0 until ads.length()) {
+            val a = ads.optJSONObject(i) ?: continue
+            if (a.optString("type") != "external_vast") continue
+            val raw = a.str("protocol_link") ?: a.str("vast_xml_url") ?: continue
+            val page = java.net.URLEncoder.encode("$SITE/content/$slug", "UTF-8")
+            return raw
+                .replace("[placeholder]", page)
+                .replace("[timestamp]", System.currentTimeMillis().toString())
+                .replace(Regex("\\[[a-zA-Z_]+\\]"), "")
+        }
+        return null
     }
 
     // ---------------------------------------------------------------- lecture du JSON

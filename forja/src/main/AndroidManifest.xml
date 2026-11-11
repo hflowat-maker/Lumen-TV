@@ -39,5 +39,14 @@
             android:screenOrientation="landscape"
             android:theme="@style/Theme.Forja.Player"
             android:windowSoftInputMode="adjustNothing" />
+
+        <!-- Lecteur officiel de Forja (page web), utilisé quand le lecteur natif ne peut pas lire une vidéo. -->
+        <activity
+            android:name=".WebPlayerActivity"
+            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|smallestScreenSize|uiMode|density"
+            android:exported="false"
+            android:screenOrientation="landscape"
+            android:theme="@style/Theme.Forja.Player"
+            android:windowSoftInputMode="adjustNothing" />
     </application>
 </manifest>

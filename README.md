@@ -30,7 +30,7 @@ Le dépôt compile aussi **Forja TV** (module `forja/`) : le catalogue de [forja
 - **Fiche** : résumé, distribution, saisons et épisodes, reprise là où on s'était arrêté, titres similaires
 - **Recherche** avec clavier à l'écran, **Tout voir** par rubrique
 - **Appui long sur OK** sur une affiche : ajouter ou retirer de Ma liste
-- **Lecture** dans le lecteur officiel de Forja, en plein écran et publicités comprises : OK pause, ← / → 15 s, ↑ / ↓ pointeur pour cliquer dans le lecteur, Retour pour revenir ; l'épisode suivant s'enchaîne
+- **Lecteur natif** (ExoPlayer), avec la publicité d'avant-vidéo de Forja comme sur le site : OK pause, ← / → 15 s (maintenir pour aller plus vite), ↑ / ↓ infos, Retour pour revenir ; reprise là où on s'était arrêté, l'épisode suivant s'enchaîne. Si une vidéo ne se lit pas en natif, l'app ouvre automatiquement le lecteur officiel de Forja
 
 Installation avec Downloader, comme Lumen TV :
 `https://github.com/hflowat-maker/Lumen-TV/releases/latest/download/forja-tv.apk`

@@ -190,13 +190,13 @@ fun DetailScreen(app: AppController, item: Item) {
                             PillButton(
                                 (if (target != null && start > 0) "Reprendre · " else "Lecture · ") + Txt.episodeLabel(ep.number, ep.title),
                                 icon = Icons.Filled.PlayArrow, primary = true,
-                                onClick = { app.playEpisodes(show, episodes, idx, start) },
+                                onClick = { app.playEpisodes(show, episodes, idx, start, d.adTag) },
                                 modifier = Modifier.remembered(memory, "play", first = true),
                             )
                             if (target != null && (idx > 0 || start > 0)) {
                                 PillButton(
                                     "Épisode 1", icon = Icons.Filled.Replay,
-                                    onClick = { app.playEpisodes(show, episodes, 0, 0) },
+                                    onClick = { app.playEpisodes(show, episodes, 0, 0, d.adTag) },
                                     modifier = Modifier.remembered(memory, "first"),
                                 )
                             }
@@ -206,18 +206,18 @@ fun DetailScreen(app: AppController, item: Item) {
                             PillButton(
                                 "Reprendre · ${Txt.remaining(filmProgress.duration - filmProgress.position)}",
                                 icon = Icons.Filled.PlayArrow, primary = true,
-                                onClick = { app.playFilm(show, filmProgress.position) },
+                                onClick = { app.playFilm(show, filmProgress.position, d?.adTag) },
                                 modifier = Modifier.remembered(memory, "play", first = true),
                             )
                             PillButton(
                                 "Depuis le début", icon = Icons.Filled.Replay,
-                                onClick = { app.playFilm(show, 0) },
+                                onClick = { app.playFilm(show, 0, d?.adTag) },
                                 modifier = Modifier.remembered(memory, "restart"),
                             )
                         }
                         else -> PillButton(
                             "Lecture", icon = Icons.Filled.PlayArrow, primary = true,
-                            onClick = { app.playFilm(show, 0) },
+                            onClick = { app.playFilm(show, 0, d?.adTag) },
                             modifier = Modifier.remembered(memory, "play", first = true),
                         )
                     }
@@ -276,7 +276,7 @@ fun DetailScreen(app: AppController, item: Item) {
                                 badge = if (p?.finished == true) "VU" else null,
                                 onClick = {
                                     val start = if (p != null && !p.finished) p.position else 0L
-                                    app.playEpisodes(show, episodes, index, start)
+                                    app.playEpisodes(show, episodes, index, start, d.adTag)
                                 },
                                 modifier = Modifier.remembered(memory, "ep/${ep.id}"),
                             )

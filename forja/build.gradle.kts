@@ -15,7 +15,7 @@ android {
         minSdk = 23
         targetSdk = 35
         versionCode = buildNumber
-        versionName = "2.0.$buildNumber"
+        versionName = "2.1.$buildNumber"
     }
 
     // Même clé que Lumen TV : les mises à jour s'installent par-dessus sans désinstaller.
@@ -85,4 +85,12 @@ dependencies {
 
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("io.coil-kt:coil-compose:2.7.0")
+
+    // Lecteur natif : vidéos HLS de Forja et publicité d'avant-vidéo (VAST) comme sur le site.
+    val media3 = "1.5.1"
+    implementation("androidx.media3:media3-exoplayer:$media3")
+    implementation("androidx.media3:media3-exoplayer-hls:$media3")
+    implementation("androidx.media3:media3-exoplayer-ima:$media3")
+    implementation("androidx.media3:media3-datasource-okhttp:$media3")
+    implementation("androidx.media3:media3-ui:$media3")
 }

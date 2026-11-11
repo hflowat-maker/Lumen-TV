@@ -26,6 +26,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.datasource.HttpDataSource
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.ima.ImaAdsLoader
@@ -361,14 +362,29 @@ class PlayerActivity : Activity() {
     }
 
     /** Bascule sur le lecteur officiel de Forja pour la vidéo en cours (et la suite de la file). */
-    private fun openOfficialPlayer(startSecs: Long, message: String) {
+    private fun openOfficialPlayer(startSecs: Long, message: String, delayMs: Long = 900L) {
         if (finishing) return
         finishing = true
-        showOsd(message, 2000L)
+        showOsd(message, delayMs + 1500L)
         handler.postDelayed({
             WebPlayerActivity.start(this, queue, index, startSecs, showSlug, showTitle, showImage)
             finish()
-        }, 900L)
+        }, delayMs)
+    }
+
+    /** Explication lisible de l'échec, pour savoir s'il vient de Forja ou de la TV. */
+    private fun describe(error: PlaybackException): String {
+        var cause: Throwable? = error
+        var http: Int? = null
+        while (cause != null && http == null) {
+            if (cause is HttpDataSource.InvalidResponseCodeException) http = cause.responseCode
+            cause = cause.cause
+        }
+        return when {
+            http == 401 || http == 403 -> "Forja refuse la lecture en dehors de son site (erreur $http)"
+            http != null -> "Le serveur vidéo de Forja répond « erreur $http »"
+            else -> "Lecture native impossible (${error.errorCodeName})"
+        }
     }
 
     private fun onError(error: PlaybackException) {
@@ -376,7 +392,7 @@ class PlayerActivity : Activity() {
         val position = if (p.isPlayingAd) 0L else p.currentPosition / 1000L
         android.util.Log.e(CrashReport.TAG, "Lecture native impossible", error)
         if (!contentStarted) {
-            openOfficialPlayer(position, "Lecture native impossible : ouverture du lecteur Forja")
+            openOfficialPlayer(position, describe(error) + "\nOuverture du lecteur Forja…", 5000L)
             return
         }
         if (!retried) {
@@ -386,7 +402,7 @@ class PlayerActivity : Activity() {
             p.prepare()
             p.playWhenReady = true
         } else {
-            openOfficialPlayer(position, "Problème de lecture : ouverture du lecteur Forja")
+            openOfficialPlayer(position, describe(error) + "\nOuverture du lecteur Forja…", 4000L)
         }
     }
 

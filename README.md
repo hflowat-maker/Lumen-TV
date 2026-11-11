@@ -24,13 +24,13 @@ Chaque modification poussée sur `main` recompile l'APK automatiquement (onglet 
 
 ## Forja TV
 
-Le dépôt compile aussi **Forja TV** (module `forja/`) : le site [forja.ma](https://forja.ma) de la SNRT (séries, films, théâtre marocains, gratuits) en plein écran sur Google TV, piloté à la télécommande.
+Le dépôt compile aussi **Forja TV** (module `forja/`) : le catalogue de [forja.ma](https://forja.ma) (SNRT : séries, films, théâtre, documentaires marocains, gratuits) dans une interface native façon Lumen TV.
 
-- **Flèches** : déplacer le pointeur ; en le poussant contre un bord, la page ou la rangée défile
-- **OK** : cliquer · **appui long sur OK** : menu (accueil, recharger, taille de l'affichage, vitesse du pointeur, version mobile/ordinateur)
-- **Retour** : page précédente ou sortie du plein écran ; deux fois pour quitter
-- **Vidéo en plein écran** : ← / → reculer / avancer de 10 s (maintenir pour aller plus vite), OK pause, ↑ / ↓ réafficher le pointeur
-- Touches lecture/pause et avance/retour rapides de la télécommande prises en charge
+- **Accueil** : Continuer à regarder, À la une, Les plus regardés, puis chaque rubrique ; onglets Séries, Films, Théâtre, Documentaires, Divertissement (une étagère par genre) et Ma liste
+- **Fiche** : résumé, distribution, saisons et épisodes, reprise là où on s'était arrêté, titres similaires
+- **Recherche** avec clavier à l'écran, **Tout voir** par rubrique
+- **Appui long sur OK** sur une affiche : ajouter ou retirer de Ma liste
+- **Lecture** dans le lecteur officiel de Forja, en plein écran et publicités comprises : OK pause, ← / → 15 s, ↑ / ↓ pointeur pour cliquer dans le lecteur, Retour pour revenir ; l'épisode suivant s'enchaîne
 
 Installation avec Downloader, comme Lumen TV :
 `https://github.com/hflowat-maker/Lumen-TV/releases/latest/download/forja-tv.apk`

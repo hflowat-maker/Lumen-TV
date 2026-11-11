@@ -30,7 +30,7 @@ Le dépôt compile aussi **Forja TV** (module `forja/`) : le catalogue de [forja
 - **Fiche** : résumé, distribution, saisons et épisodes, reprise là où on s'était arrêté, titres similaires
 - **Recherche** avec clavier à l'écran, **Tout voir** par rubrique
 - **Appui long sur OK** sur une affiche : ajouter ou retirer de Ma liste
-- **Lecture** dans le lecteur officiel de Forja (Forja refuse la lecture de ses vidéos ailleurs), en plein écran et publicités comprises : OK pause, ← / → 15 s, Retour pour revenir ; OK accepte le bandeau cookies quand Forja l'affiche ; ↑ / ↓ pointeur, placé directement sur « Ignorer » pendant une publicité ; reprise et épisode suivant automatiques
+- **Lecture** dans le lecteur officiel de Forja (Forja refuse la lecture de ses vidéos ailleurs), en plein écran et publicités comprises : OK pause, ← / → 15 s, Retour pour revenir ; **↑ / ↓ : sélection des boutons du lecteur aux flèches** (cadre doré, OK pour appuyer, Retour pour revenir à la vidéo) ; OK accepte le bandeau cookies quand Forja l'affiche ; appui long sur OK : pointeur de secours ; reprise et épisode suivant automatiques
 
 Installation avec Downloader, comme Lumen TV :
 `https://github.com/hflowat-maker/Lumen-TV/releases/latest/download/forja-tv.apk`

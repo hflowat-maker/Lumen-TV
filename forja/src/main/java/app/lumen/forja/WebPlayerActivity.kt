@@ -90,10 +90,26 @@ class WebPlayerActivity : Activity(), CursorView.Listener {
     private var lastSaved = 0L
     private var countdown = 0
     private var cursorMode = false
+    private var navMode = false
+    private var navX = 0.5f
+    private var navY = 0.5f
+    private var okDownAt = 0L
+    private var okLong = false
 
     private val hideOsdTask = Runnable { osdView.animate().alpha(0f).setDuration(250).start() }
     private val hideInfoTask = Runnable { if (playing || adActive) infoBar.animate().alpha(0f).setDuration(300).start() }
     private val cursorIdleTask = Runnable { leaveCursorMode() }
+    private val navIdleTask = Runnable { exitNav() }
+
+    /** Garde les commandes du lecteur affichées tant que l'on navigue dans ses boutons. */
+    private val navKeepAlive = object : Runnable {
+        override fun run() {
+            if (!navMode || webViewGone) return
+            hover(MotionEvent.ACTION_HOVER_MOVE, navX * webView.width, navY * webView.height)
+            webView.evaluateJavascript("window.__ftvNav&&window.__ftvNav.wake()", null)
+            handler.postDelayed(this, 1500L)
+        }
+    }
     private val countdownTask = object : Runnable {
         override fun run() {
             if (countdown <= 0) return
@@ -347,6 +363,7 @@ class WebPlayerActivity : Activity(), CursorView.Listener {
         val start = (webView.tag as? Long) ?: 0L
         webView.evaluateJavascript("if(typeof window.__ftvStart!=='number'||!window.__ftv){window.__ftvStart=$start;}", null)
         webView.evaluateJavascript(Scripts.PLAYER, null)
+        webView.evaluateJavascript(Scripts.NAV, null)
     }
 
     private fun hideSplash() {
@@ -354,7 +371,7 @@ class WebPlayerActivity : Activity(), CursorView.Listener {
         splashHidden = true
         if (!hintShown) {
             hintShown = true
-            handler.postDelayed({ showOsd("OK : pause   ·   ← → : 15 s   ·   Retour : quitter", 3500L) }, 400L)
+            handler.postDelayed({ showOsd("OK : pause   ·   ← → : 15 s   ·   ↑ : boutons du lecteur   ·   Retour : quitter", 4000L) }, 400L)
         }
         splash.animate().alpha(0f).setDuration(350).withEndAction { splash.visibility = View.GONE }.start()
     }
@@ -502,8 +519,19 @@ class WebPlayerActivity : Activity(), CursorView.Listener {
             }
             KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER,
             KeyEvent.KEYCODE_BUTTON_A, KeyEvent.KEYCODE_BUTTON_SELECT -> {
-                if (!down) onOk()
-                else if (first && cursorMode) cursor.press()
+                if (first) {
+                    okDownAt = SystemClock.uptimeMillis()
+                    okLong = false
+                    if (cursorMode) cursor.press()
+                } else if (down && !okLong && SystemClock.uptimeMillis() - okDownAt > 800L) {
+                    // Appui long sur OK : pointeur de secours, pour un bouton que les flèches n'atteignent pas.
+                    okLong = true
+                    exitNav()
+                    if (!cursorMode) enterCursorMode()
+                } else if (!down) {
+                    if (!okLong) onOk()
+                    okLong = false
+                }
                 return true
             }
             KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_ESCAPE, KeyEvent.KEYCODE_BUTTON_B -> {
@@ -558,6 +586,17 @@ class WebPlayerActivity : Activity(), CursorView.Listener {
             scheduleCursorIdle()
             return
         }
+        if (navMode) {
+            if (event.repeatCount % 3 != 0) return
+            val dir = when (code) {
+                KeyEvent.KEYCODE_DPAD_LEFT -> "left"
+                KeyEvent.KEYCODE_DPAD_RIGHT -> "right"
+                KeyEvent.KEYCODE_DPAD_UP -> "up"
+                else -> "down"
+            }
+            navCall("window.__ftvNav?window.__ftvNav.move('$dir'):null", announce = true)
+            return
+        }
         when (code) {
             KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT -> {
                 val sign = if (code == KeyEvent.KEYCODE_DPAD_RIGHT) 1 else -1
@@ -566,7 +605,81 @@ class WebPlayerActivity : Activity(), CursorView.Listener {
                     event.repeatCount % 3 == 0 -> seek((if (event.repeatCount > 15) 60 else 15) * sign)
                 }
             }
-            else -> if (event.repeatCount == 0) enterCursorMode()
+            else -> if (event.repeatCount == 0) enterNav()
+        }
+    }
+
+    // ------------------------------------------------------------------ boutons du lecteur aux flèches
+
+    private fun enterNav() {
+        if (cookieVisible) {
+            showOsd("Forja affiche son bandeau cookies : OK pour accepter", 3000L)
+        }
+        navMode = true
+        navCall("window.__ftvNav?window.__ftvNav.start():null", announce = true)
+        handler.removeCallbacks(navKeepAlive)
+        handler.postDelayed(navKeepAlive, 1500L)
+    }
+
+    private fun exitNav() {
+        handler.removeCallbacks(navIdleTask)
+        handler.removeCallbacks(navKeepAlive)
+        if (!navMode) return
+        navMode = false
+        if (!webViewGone) webView.evaluateJavascript("window.__ftvNav&&window.__ftvNav.stop()", null)
+        hover(MotionEvent.ACTION_HOVER_EXIT, navX * webView.width, navY * webView.height)
+    }
+
+    private fun scheduleNavIdle() {
+        handler.removeCallbacks(navIdleTask)
+        handler.postDelayed(navIdleTask, 8000L)
+    }
+
+    /** Appelle la navigation de la page ; met à jour le bouton sélectionné et l'annonce. */
+    private fun navCall(js: String, announce: Boolean) {
+        if (webViewGone) return
+        webView.evaluateJavascript(js) { raw ->
+            if (!navMode) return@evaluateJavascript
+            val s = try { JSONTokener(raw ?: "null").nextValue() as? String } catch (e: Exception) { null }
+            val o = s?.let { try { JSONObject(it) } catch (e: Exception) { null } }
+            if (o == null || !o.optBoolean("ok")) {
+                navMode = false
+                handler.removeCallbacks(navKeepAlive)
+                showOsd(if (adActive) "Publicité en cours : attendez la fin ou le bouton « Ignorer »" else "Le lecteur se charge, réessayez dans un instant", 2200L)
+                return@evaluateJavascript
+            }
+            navX = o.optDouble("fx", 0.5).toFloat()
+            navY = o.optDouble("fy", 0.5).toFloat()
+            hover(MotionEvent.ACTION_HOVER_MOVE, navX * webView.width, navY * webView.height)
+            if (announce) showOsd(buttonLabel(o.optString("label")) + "   ·   OK : appuyer   ·   Retour : vidéo", 1800L)
+            scheduleNavIdle()
+        }
+    }
+
+    private fun navPress() {
+        tap(navX * webView.width, navY * webView.height)
+        scheduleNavIdle()
+        // Le bouton peut changer (Pause → Lecture) ou ouvrir un menu : on redessine la sélection.
+        handler.postDelayed({ if (navMode) navCall("window.__ftvNav?window.__ftvNav.refresh():null", announce = false) }, 350L)
+    }
+
+    /** Nom du bouton en français (le lecteur de Forja nomme ses boutons en anglais). */
+    private fun buttonLabel(raw: String): String {
+        val l = raw.lowercase(Locale.ROOT)
+        return when {
+            l.startsWith("rewind") -> "Reculer de 15 s"
+            l.startsWith("forward") -> "Avancer de 15 s"
+            l == "pause" -> "Pause"
+            l == "play" -> "Lecture"
+            l.contains("unmute") -> "Activer le son"
+            l.contains("mute") -> "Couper le son"
+            l.contains("settings") -> "Réglages (qualité)"
+            l.contains("exit fullscreen") -> "Quitter le plein écran"
+            l.contains("fullscreen") -> "Plein écran"
+            l.contains("subtitle") || l.contains("caption") -> "Sous-titres"
+            l == "menu" -> "Menu"
+            l.isBlank() -> "Bouton"
+            else -> raw
         }
     }
 
@@ -585,6 +698,7 @@ class WebPlayerActivity : Activity(), CursorView.Listener {
                 tap(cursor.cursorX, cursor.cursorY)
                 scheduleCursorIdle()
             }
+            navMode -> navPress()
             cookieVisible -> acceptCookies()
             else -> command("toggle")
         }
@@ -602,6 +716,7 @@ class WebPlayerActivity : Activity(), CursorView.Listener {
         when {
             countdown > 0 -> finish()
             cursorMode -> leaveCursorMode()
+            navMode -> exitNav()
             customView != null -> leaveFullscreen(fromWeb = false)
             else -> finish()
         }
@@ -615,7 +730,7 @@ class WebPlayerActivity : Activity(), CursorView.Listener {
             cursor.moveTo(root.width * 0.88f, root.height * 0.84f)
             showOsd("Pointeur sur « Ignorer » : OK pour cliquer quand le bouton apparaît", 3000L)
         } else {
-            showOsd("Pointeur : OK pour cliquer · Retour pour revenir à la vidéo", 2500L)
+            showOsd("Pointeur de secours : OK pour cliquer · Retour pour revenir à la vidéo", 2500L)
         }
         scheduleCursorIdle()
     }
@@ -648,7 +763,7 @@ class WebPlayerActivity : Activity(), CursorView.Listener {
             }
             val o = try { JSONObject(s) } catch (e: Exception) { return@evaluateJavascript }
             if (!o.optBoolean("ok")) {
-                showOsd(if (o.optString("reason") == "ad") "Publicité en cours · ↑ pour cliquer sur « Ignorer » s'il apparaît" else "Le lecteur se charge…", 2500L)
+                showOsd(if (o.optString("reason") == "ad") "Publicité en cours · ↑ puis OK sur « Ignorer » s'il apparaît" else "Le lecteur se charge…", 2500L)
                 return@evaluateJavascript
             }
             position = o.optDouble("t", position)
@@ -761,10 +876,21 @@ class WebPlayerActivity : Activity(), CursorView.Listener {
             val url = request?.url ?: return false
             val scheme = url.scheme?.lowercase(Locale.ROOT) ?: return false
             if (scheme != "http" && scheme != "https") return true
+            if (request?.isForMainFrame != true) return false
+            val host = url.host ?: return true
+            if (!host.endsWith("forja.ma")) {
+                // Clic sur une publicité : on reste dans le lecteur.
+                showOsd("Lien publicitaire ignoré", 1500L)
+                return true
+            }
             // Le lecteur reste sur Forja : un lien vers une autre page du site ramène à l'app.
-            if (request?.isForMainFrame == true && url.host?.endsWith("forja.ma") == true && url.path?.contains("/player/") != true) {
-                showOsd("Cette vidéo n'est pas disponible dans le lecteur Forja", 2500L)
-                handler.postDelayed({ finish() }, 2500L)
+            if (url.path?.contains("/player/") != true) {
+                if (!splashHidden) {
+                    showOsd("Cette vidéo n'est pas disponible dans le lecteur Forja", 2500L)
+                    handler.postDelayed({ finish() }, 2500L)
+                } else {
+                    finish()
+                }
                 return true
             }
             return false

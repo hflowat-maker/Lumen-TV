@@ -101,6 +101,152 @@ object Scripts {
 })();
 """
 
+    /**
+     * Navigation aux flèches entre les boutons du lecteur officiel (sans pointeur) :
+     * repère les boutons visibles, entoure celui qui est sélectionné d'un cadre doré
+     * et renvoie sa position pour que l'app « appuie » dessus avec OK.
+     */
+    const val NAV = """
+(function(){
+  if (window.__ftvNav) return;
+  var ring = null, cur = null;
+  var SEL = 'button, a[href], [role="button"], [role="menuitem"], [role="menuitemradio"], [role="menuitemcheckbox"], [role="option"], [role="tab"], [tabindex]';
+  function vis(el){
+    if (!el || !el.getBoundingClientRect) return false;
+    var r = el.getBoundingClientRect();
+    if (r.width < 8 || r.height < 8) return false;
+    if (r.right <= 0 || r.bottom <= 0 || r.left >= window.innerWidth || r.top >= window.innerHeight) return false;
+    for (var a = el; a && a !== document.documentElement; a = a.parentElement){
+      var st = getComputedStyle(a);
+      if (st.display === 'none' || st.visibility === 'hidden' || parseFloat(st.opacity) < 0.05) return false;
+    }
+    return true;
+  }
+  function label(el){
+    return (el.getAttribute('aria-label') || el.getAttribute('title') || el.innerText || el.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 40);
+  }
+  function bad(el){
+    if (el.tagName === 'VIDEO' || el.tagName === 'HTML' || el.tagName === 'BODY') return true;
+    var cls = typeof el.className === 'string' ? el.className : '';
+    if (/picture|pip|live-sync/i.test(label(el) + ' ' + cls)) return true;
+    var role = el.getAttribute('role');
+    if (role === 'slider' || role === 'progressbar' || el.type === 'range') return true;
+    if (el.getAttribute('tabindex') === '-1' && el.tagName !== 'BUTTON' && !role) return true;
+    var r = el.getBoundingClientRect();
+    return r.width * r.height > window.innerWidth * window.innerHeight * 0.3;
+  }
+  function inside(el, list){
+    for (var a = el.parentElement; a; a = a.parentElement){ if (list.indexOf(a) >= 0) return true; }
+    return false;
+  }
+  function candidates(){
+    var t1 = [];
+    var nodes = document.querySelectorAll(SEL);
+    for (var i = 0; i < nodes.length; i++){ if (vis(nodes[i]) && !bad(nodes[i])) t1.push(nodes[i]); }
+    t1 = t1.filter(function(el){ return !inside(el, t1); });
+    var out = t1.map(function(el){ return { el: el, label: label(el) }; });
+    var all = document.querySelectorAll('div, span, li, p, img');
+    for (var j = 0; j < all.length; j++){
+      var el = all[j];
+      if (getComputedStyle(el).cursor !== 'pointer') continue;
+      if (el.parentElement && getComputedStyle(el.parentElement).cursor === 'pointer') continue;
+      if (!vis(el) || bad(el) || inside(el, t1) || el.querySelector(SEL)) continue;
+      out.push({ el: el, label: label(el) });
+    }
+    // Publicité : le bouton « Ignorer » est dans le cadre de la régie, en bas à droite.
+    var fr = document.querySelector('.eb-ads-container iframe, iframe[src*="imasdk"]');
+    if (fr && vis(fr)){
+      var R = fr.getBoundingClientRect();
+      out.push({ el: null, label: 'Ignorer la publicité', r: { left: R.right - R.width * 0.2, top: R.bottom - R.height * 0.2, width: R.width * 0.16, height: R.height * 0.1 } });
+    }
+    return out;
+  }
+  function rectOf(t){ return t.el ? t.el.getBoundingClientRect() : t.r; }
+  function center(r){ return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; }
+  function same(a, b){ return !!(a && b && (a.el ? a.el === b.el : (!b.el && a.label === b.label))); }
+  function preferred(list){
+    for (var i = 0; i < list.length; i++){ if (/accepter|accept/i.test(list[i].label)) return list[i]; }
+    for (var k = 0; k < list.length; k++){ if (['pause', 'play', 'lecture'].indexOf(list[k].label.toLowerCase()) >= 0) return list[k]; }
+    var best = null, bd = 1e9;
+    list.forEach(function(t){
+      var c = center(rectOf(t));
+      var d = Math.hypot(c.x - window.innerWidth / 2, c.y - window.innerHeight * 0.55);
+      if (d < bd){ bd = d; best = t; }
+    });
+    return best;
+  }
+  function nearest(list, dir){
+    var c = center(rectOf(cur)), best = null, bs = 1e9;
+    list.forEach(function(t){
+      if (same(t, cur)) return;
+      var p = center(rectOf(t)), dx = p.x - c.x, dy = p.y - c.y, prim, sec;
+      if (dir === 'left'){ if (dx >= -4) return; prim = -dx; sec = Math.abs(dy); }
+      else if (dir === 'right'){ if (dx <= 4) return; prim = dx; sec = Math.abs(dy); }
+      else if (dir === 'up'){ if (dy >= -4) return; prim = -dy; sec = Math.abs(dx); }
+      else { if (dy <= 4) return; prim = dy; sec = Math.abs(dx); }
+      var sc = prim + sec * 2.5;
+      if (sc < bs){ bs = sc; best = t; }
+    });
+    return best;
+  }
+  function draw(){
+    if (!ring){
+      ring = document.createElement('div');
+      ring.style.cssText = 'position:fixed;z-index:2147483647;pointer-events:none;border:3px solid #C9A45C;border-radius:10px;' +
+        'box-shadow:0 0 0 3px rgba(0,0,0,.5),0 0 18px rgba(201,164,92,.7);transition:all .12s ease-out;display:none;';
+      document.documentElement.appendChild(ring);
+    }
+    if (!cur){ ring.style.display = 'none'; return; }
+    var r = rectOf(cur);
+    ring.style.display = 'block';
+    ring.style.left = (r.left - 5) + 'px';
+    ring.style.top = (r.top - 5) + 'px';
+    ring.style.width = (r.width + 10) + 'px';
+    ring.style.height = (r.height + 10) + 'px';
+  }
+  function result(){
+    if (!cur) return JSON.stringify({ ok: false });
+    var c = center(rectOf(cur));
+    return JSON.stringify({ ok: true, label: cur.label, fx: c.x / window.innerWidth, fy: c.y / window.innerHeight });
+  }
+  function wake(){
+    var p = document.querySelector('.eb-player');
+    if (!p) return;
+    var r = p.getBoundingClientRect();
+    try { p.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 })); } catch(e){}
+  }
+  function pick(list){ return list.length ? preferred(list) : null; }
+  window.__ftvNav = {
+    start: function(){ wake(); cur = pick(candidates()); draw(); return result(); },
+    move: function(dir){
+      wake();
+      var list = candidates();
+      if (!cur || !list.some(function(t){ return same(t, cur); })) cur = pick(list);
+      else { var n = nearest(list, dir); if (n) cur = n; }
+      draw();
+      return result();
+    },
+    refresh: function(){
+      wake();
+      var list = candidates(), keep = null;
+      if (cur){
+        list.forEach(function(t){ if (same(t, cur)) keep = t; });
+        if (!keep){
+          var c = center(rectOf(cur)), bd = 1e9;
+          list.forEach(function(t){ var p = center(rectOf(t)); var d = Math.hypot(p.x - c.x, p.y - c.y); if (d < bd){ bd = d; keep = t; } });
+          if (bd > 60) keep = null;
+        }
+      }
+      cur = keep || pick(list);
+      draw();
+      return result();
+    },
+    stop: function(){ cur = null; draw(); return 'ok'; },
+    wake: wake
+  };
+})();
+"""
+
     /** Met en pause la vidéo (quand on quitte le lecteur avec le bouton Accueil). */
     const val PAUSE_ALL = "document.querySelectorAll('video').forEach(function(v){ try { v.pause(); } catch(e){} });"
 }

@@ -32,15 +32,7 @@
             </intent-filter>
         </activity>
 
-        <activity
-            android:name=".PlayerActivity"
-            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|smallestScreenSize|uiMode|density"
-            android:exported="false"
-            android:screenOrientation="landscape"
-            android:theme="@style/Theme.Forja.Player"
-            android:windowSoftInputMode="adjustNothing" />
-
-        <!-- Lecteur officiel de Forja (page web), utilisé quand le lecteur natif ne peut pas lire une vidéo. -->
+        <!-- Lecteur officiel de Forja (page web) : Forja refuse la lecture de ses vidéos ailleurs (erreur 403). -->
         <activity
             android:name=".WebPlayerActivity"
             android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|smallestScreenSize|uiMode|density"

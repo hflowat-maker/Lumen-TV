@@ -43,8 +43,8 @@ import org.json.JSONTokener
 import java.util.Locale
 
 /**
- * Lecteur de secours : la page du lecteur officiel de Forja en plein écran (publicités comprises),
- * utilisée quand une vidéo ne peut pas être lue par le lecteur natif.
+ * Lecteur : la page du lecteur officiel de Forja en plein écran (publicités comprises) ;
+ * Forja n'autorise pas la lecture de ses vidéos en dehors de son lecteur (erreur 403).
  * pilotée à la télécommande. OK : pause / lecture ; ← → : reculer / avancer de 15 s ;
  * ↑ ↓ : pointeur pour cliquer dans le lecteur ; Retour : revenir à la fiche.
  * La position est mémorisée pour « Continuer à regarder » et l'épisode suivant s'enchaîne.
@@ -86,6 +86,7 @@ class WebPlayerActivity : Activity(), CursorView.Listener {
     private var duration = 0.0
     private var playing = false
     private var adActive = false
+    private var cookieVisible = false
     private var lastSaved = 0L
     private var countdown = 0
     private var cursorMode = false
@@ -353,12 +354,16 @@ class WebPlayerActivity : Activity(), CursorView.Listener {
         splashHidden = true
         if (!hintShown) {
             hintShown = true
-            handler.postDelayed({ showOsd("OK : pause   ·   ← → : 15 s   ·   ↑ : pointeur pour cliquer dans le lecteur", 4000L) }, 400L)
+            handler.postDelayed({ showOsd("OK : pause   ·   ← → : 15 s   ·   Retour : quitter", 3500L) }, 400L)
         }
         splash.animate().alpha(0f).setDuration(350).withEndAction { splash.visibility = View.GONE }.start()
     }
 
-    private fun onState(t: Double, d: Double, isPlaying: Boolean, ad: Boolean) {
+    private fun onState(t: Double, d: Double, isPlaying: Boolean, ad: Boolean, cookie: Boolean) {
+        if (cookie && !cookieVisible && !cursorMode) {
+            showOsd("Forja affiche son bandeau cookies : OK pour accepter", 6000L)
+        }
+        cookieVisible = cookie
         val wasAd = adActive
         val wasPlaying = playing
         position = t
@@ -366,7 +371,7 @@ class WebPlayerActivity : Activity(), CursorView.Listener {
         playing = isPlaying
         adActive = ad
         if (isPlaying || ad) hideSplash()
-        if (ad && !wasAd) showOsd("Publicité Forja : la vidéo démarre juste après", 3000L)
+        if (ad && !wasAd && !cookieVisible) showOsd("Publicité Forja : la vidéo démarre juste après", 3000L)
         updateKeepScreenOn()
         updateInfo()
         if (!isPlaying && !ad && t > 1 && infoBar.alpha < 1f && countdown == 0) showInfo(stay = true)
@@ -580,7 +585,16 @@ class WebPlayerActivity : Activity(), CursorView.Listener {
                 tap(cursor.cursorX, cursor.cursorY)
                 scheduleCursorIdle()
             }
+            cookieVisible -> acceptCookies()
             else -> command("toggle")
+        }
+    }
+
+    /** Clic sur « Accepter » du bandeau cookies de Forja, à la demande (OK) de l'utilisateur. */
+    private fun acceptCookies() {
+        webView.evaluateJavascript("window.__ftvCookie?window.__ftvCookie():'none'") { r ->
+            cookieVisible = false
+            if (r?.contains("ok") == true) showOsd("Bandeau cookies fermé", 1200L) else command("toggle")
         }
     }
 
@@ -596,7 +610,13 @@ class WebPlayerActivity : Activity(), CursorView.Listener {
     private fun enterCursorMode() {
         cursorMode = true
         cursor.show()
-        showOsd("Pointeur : OK pour cliquer · Retour pour revenir à la vidéo", 2500L)
+        if (adActive) {
+            // Le bouton « Ignorer » des publicités est en bas à droite : le pointeur y va directement.
+            cursor.moveTo(root.width * 0.88f, root.height * 0.84f)
+            showOsd("Pointeur sur « Ignorer » : OK pour cliquer quand le bouton apparaît", 3000L)
+        } else {
+            showOsd("Pointeur : OK pour cliquer · Retour pour revenir à la vidéo", 2500L)
+        }
         scheduleCursorIdle()
     }
 
@@ -628,7 +648,7 @@ class WebPlayerActivity : Activity(), CursorView.Listener {
             }
             val o = try { JSONObject(s) } catch (e: Exception) { return@evaluateJavascript }
             if (!o.optBoolean("ok")) {
-                showOsd(if (o.optString("reason") == "ad") "Publicité en cours, la vidéo démarre juste après" else "Le lecteur se charge…")
+                showOsd(if (o.optString("reason") == "ad") "Publicité en cours · ↑ pour cliquer sur « Ignorer » s'il apparaît" else "Le lecteur se charge…", 2500L)
                 return@evaluateJavascript
             }
             position = o.optDouble("t", position)
@@ -726,8 +746,8 @@ class WebPlayerActivity : Activity(), CursorView.Listener {
 
     inner class Bridge {
         @JavascriptInterface
-        fun state(t: Double, d: Double, isPlaying: Boolean, ad: Boolean) {
-            handler.post { if (!webViewGone) onState(t, d, isPlaying, ad) }
+        fun state(t: Double, d: Double, isPlaying: Boolean, ad: Boolean, cookie: Boolean) {
+            handler.post { if (!webViewGone) onState(t, d, isPlaying, ad, cookie) }
         }
 
         @JavascriptInterface

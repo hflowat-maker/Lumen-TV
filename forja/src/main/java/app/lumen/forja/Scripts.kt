@@ -45,6 +45,24 @@ object Scripts {
     }
     return false;
   }
+  // Bandeau cookies de Forja : repéré pour que l'app propose « OK pour accepter » (jamais accepté tout seul).
+  function cookieButton(){
+    var els = document.querySelectorAll('button, a, [role="button"]');
+    for (var i = 0; i < els.length; i++){
+      var el = els[i];
+      var t = (el.innerText || el.textContent || '').trim().toLowerCase();
+      if (t !== 'accepter' && t !== 'accept' && t !== "j'accepte" && t !== 'قبول' && t !== 'موافق') continue;
+      if (!visible(el)) continue;
+      var box = el.parentElement, k = 0;
+      while (box && k < 5){
+        if (/cookie|كوكيز|ملفات تعريف/i.test(box.innerText || '')) return el;
+        box = box.parentElement; k++;
+      }
+    }
+    return null;
+  }
+  window.__ftvCookie = function(){ var c = cookieButton(); if (c){ c.click(); return 'ok'; } return 'none'; };
+
   function tick(){
     var m = main(); if (!m) return;
     var ad = adActive();
@@ -55,14 +73,14 @@ object Scripts {
         window.__ftvStart = 0;
       }
       if (!unmuted && !m.paused){ unmuted = true; if (m.muted) { m.muted = false; if (m.volume < 0.5) m.volume = 1; } }
-      if (!kicked && m.paused && m.currentTime === 0 && m.readyState >= 2 && Date.now() - bornAt > 4000){
+      if (!kicked && m.paused && m.currentTime === 0 && m.readyState >= 2 && Date.now() - bornAt > 2000){
         kicked = true; var pr = m.play(); if (pr && pr.catch) pr.catch(function(){});
       }
     }
     if (!ad && m.ended && !endedSent){ endedSent = true; var b0 = bridge(); if (b0) { try { b0.ended(); } catch(e){} } }
     if (!m.ended) endedSent = false;
     var b = bridge();
-    if (b){ try { b.state(m.currentTime || 0, d, !m.paused && !m.ended, ad); } catch(e){} }
+    if (b){ try { b.state(m.currentTime || 0, d, !m.paused && !m.ended, ad, !!cookieButton()); } catch(e){} }
   }
   setInterval(tick, 500);
   document.addEventListener('ended', function(){ setTimeout(tick, 50); }, true);

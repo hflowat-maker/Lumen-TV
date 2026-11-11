@@ -31,7 +31,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Text
 import app.lumen.forja.CrashReport
-import app.lumen.forja.PlayerActivity
+import app.lumen.forja.WebPlayerActivity
 import app.lumen.forja.data.Category
 import app.lumen.forja.data.Detail
 import app.lumen.forja.data.Episode
@@ -89,12 +89,12 @@ class AppController(val activity: Activity) {
         val queue = episodes.map { ep ->
             Playable(ep.id, ep.slug, Txt.episodeLabel(ep.number, ep.title), show.title, ep.image ?: show.tile, ep.durationSecs)
         }
-        PlayerActivity.start(activity, queue, index, startSecs, show.slug, show.title, show.wide ?: show.tile, adTag)
+        WebPlayerActivity.start(activity, queue, index, startSecs, show.slug, show.title, show.wide ?: show.tile)
     }
 
     fun playFilm(item: Item, startSecs: Long, adTag: String? = null) {
         val queue = listOf(Playable(item.id, item.slug, item.title, null, item.wide ?: item.tile, item.durationSecs))
-        PlayerActivity.start(activity, queue, 0, startSecs, null, item.title, item.wide ?: item.tile, adTag)
+        WebPlayerActivity.start(activity, queue, 0, startSecs, null, item.title, item.wide ?: item.tile)
     }
 
     /** Reprend depuis « Continuer à regarder » : la vidéo en cours, ou l'épisode suivant. */
@@ -103,7 +103,7 @@ class AppController(val activity: Activity) {
         if (showSlug == null) {
             val start = if (p.finished) 0L else p.position
             val queue = listOf(Playable(p.id, p.slug, p.showTitle, null, p.image, p.duration.toInt()))
-            PlayerActivity.start(activity, queue, 0, start, null, p.showTitle, p.image, null)
+            WebPlayerActivity.start(activity, queue, 0, start, null, p.showTitle, p.image)
             return
         }
         scope.launch {

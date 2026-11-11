@@ -198,6 +198,15 @@ class CursorView(context: Context) : View(context), Choreographer.FrameCallback 
         listener?.onEdgeScroll(cursorX, cursorY, dx, dy, false)
     }
 
+    /** Place le pointeur à un endroit précis (ex. : là où apparaît le bouton « Ignorer » d'une publicité). */
+    fun moveTo(x: Float, y: Float) {
+        if (width <= 0 || height <= 0) return
+        cursorX = x.coerceIn(0f, width - 1f)
+        cursorY = y.coerceIn(0f, height - 1f)
+        invalidate()
+        listener?.onCursorMove(cursorX, cursorY)
+    }
+
     fun show() {
         if (cursorVisible) return
         cursorVisible = true

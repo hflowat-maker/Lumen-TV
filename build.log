@@ -1,0 +1,132 @@
+To honour the JVM settings for this build a single-use Daemon process will be forked. For more on this, please refer to https://docs.gradle.org/8.11.1/userguide/gradle_daemon.html#sec:disabling_the_daemon in the Gradle documentation.
+Daemon will be stopped at the end of the build 
+> Task :app:preBuild UP-TO-DATE
+> Task :forja:preBuild UP-TO-DATE
+> Task :app:preReleaseBuild UP-TO-DATE
+> Task :forja:preReleaseBuild UP-TO-DATE
+> Task :app:mergeReleaseJniLibFolders
+> Task :forja:mergeReleaseJniLibFolders
+> Task :forja:mergeReleaseNativeLibs
+> Task :app:mergeReleaseNativeLibs
+> Task :app:buildKotlinToolingMetadata
+
+> Task :forja:stripReleaseDebugSymbols
+Unable to strip the following libraries, packaging them as they are: libandroidx.graphics.path.so.
+
+> Task :app:stripReleaseDebugSymbols
+Unable to strip the following libraries, packaging them as they are: libandroidx.graphics.path.so, libffmpegJNI.so.
+
+> Task :app:extractReleaseNativeSymbolTables FROM-CACHE
+> Task :forja:extractReleaseNativeSymbolTables FROM-CACHE
+> Task :app:mergeReleaseNativeDebugMetadata NO-SOURCE
+> Task :forja:mergeReleaseNativeDebugMetadata NO-SOURCE
+> Task :app:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :forja:buildKotlinToolingMetadata
+> Task :forja:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :forja:checkReleaseDuplicateClasses
+> Task :app:checkReleaseDuplicateClasses
+> Task :forja:generateReleaseBuildConfig
+> Task :app:generateReleaseBuildConfig
+> Task :forja:generateReleaseResValues FROM-CACHE
+> Task :app:generateReleaseResValues FROM-CACHE
+> Task :app:checkReleaseAarMetadata
+> Task :forja:checkReleaseAarMetadata
+> Task :app:mapReleaseSourceSetPaths
+> Task :forja:mapReleaseSourceSetPaths
+> Task :app:generateReleaseResources FROM-CACHE
+> Task :forja:generateReleaseResources FROM-CACHE
+> Task :forja:mergeReleaseResources FROM-CACHE
+> Task :forja:packageReleaseResources FROM-CACHE
+> Task :forja:parseReleaseLocalResources FROM-CACHE
+> Task :forja:createReleaseCompatibleScreenManifests
+> Task :forja:extractDeepLinksRelease FROM-CACHE
+> Task :app:mergeReleaseResources FROM-CACHE
+> Task :app:packageReleaseResources FROM-CACHE
+> Task :app:parseReleaseLocalResources FROM-CACHE
+> Task :app:createReleaseCompatibleScreenManifests
+> Task :app:extractDeepLinksRelease FROM-CACHE
+> Task :app:processReleaseMainManifest
+> Task :forja:processReleaseMainManifest
+> Task :forja:processReleaseManifest
+> Task :app:processReleaseManifest
+> Task :app:javaPreCompileRelease FROM-CACHE
+> Task :forja:javaPreCompileRelease FROM-CACHE
+> Task :app:processReleaseManifestForPackage
+> Task :app:mergeReleaseArtProfile
+> Task :app:extractProguardFiles
+> Task :app:mergeReleaseStartupProfile
+> Task :app:mergeReleaseShaders
+> Task :app:compileReleaseShaders NO-SOURCE
+> Task :app:generateReleaseAssets UP-TO-DATE
+> Task :app:mergeReleaseAssets
+> Task :app:compressReleaseAssets FROM-CACHE
+> Task :app:extractReleaseVersionControlInfo
+> Task :forja:desugarReleaseFileDependencies FROM-CACHE
+> Task :forja:mergeReleaseStartupProfile
+> Task :forja:processReleaseManifestForPackage
+> Task :app:processReleaseResources
+> Task :app:collectReleaseDependencies
+> Task :forja:processReleaseResources
+> Task :app:sdkReleaseDependencyData
+> Task :forja:mergeExtDexRelease FROM-CACHE
+> Task :app:convertLinkedResourcesToProtoRelease
+> Task :app:validateSigningRelease
+> Task :app:writeReleaseAppMetadata
+> Task :app:writeReleaseSigningConfigVersions
+> Task :forja:mergeReleaseArtProfile
+> Task :forja:mergeReleaseShaders
+> Task :forja:compileReleaseShaders NO-SOURCE
+> Task :forja:generateReleaseAssets UP-TO-DATE
+> Task :forja:mergeReleaseAssets
+> Task :forja:compressReleaseAssets FROM-CACHE
+
+> Task :app:compileReleaseKotlin
+e: The daemon has terminated unexpectedly on startup attempt #1 with error code: 0. The daemon process output:
+    1. Kotlin compile daemon is ready
+
+> Task :forja:extractReleaseVersionControlInfo
+> Task :forja:collectReleaseDependencies
+> Task :forja:sdkReleaseDependencyData
+> Task :forja:validateSigningRelease
+> Task :forja:writeReleaseAppMetadata
+> Task :forja:optimizeReleaseResources
+> Task :forja:writeReleaseSigningConfigVersions
+
+> Task :forja:compileReleaseKotlin
+w: file:///home/runner/work/Lumen-TV/Lumen-TV/forja/src/main/java/app/lumen/forja/ui/components/Inputs.kt:98:35 'val Icons.Filled.Backspace: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Filled.Backspace.
+
+> Task :forja:compileReleaseJavaWithJavac
+
+> Task :app:compileReleaseKotlin
+w: file:///home/runner/work/Lumen-TV/Lumen-TV/app/src/main/java/app/lumen/tv/player/PlayerScreen.kt:823:77 'val Icons.Filled.OpenInNew: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Filled.OpenInNew.
+w: file:///home/runner/work/Lumen-TV/Lumen-TV/app/src/main/java/app/lumen/tv/player/PlayerScreen.kt:962:59 'val Icons.Filled.FormatListBulleted: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Filled.FormatListBulleted.
+w: file:///home/runner/work/Lumen-TV/Lumen-TV/app/src/main/java/app/lumen/tv/ui/components/Inputs.kt:252:58 'val Icons.Filled.Backspace: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Filled.Backspace.
+w: file:///home/runner/work/Lumen-TV/Lumen-TV/app/src/main/java/app/lumen/tv/ui/components/Inputs.kt:359:35 'val Icons.Filled.Backspace: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Filled.Backspace.
+w: file:///home/runner/work/Lumen-TV/Lumen-TV/app/src/main/java/app/lumen/tv/ui/screens/LoginScreen.kt:147:41 'val Icons.Filled.Login: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Filled.Login.
+
+> Task :app:compileReleaseJavaWithJavac
+> Task :app:mergeReleaseGeneratedProguardFiles
+> Task :app:processReleaseJavaRes
+> Task :forja:dexBuilderRelease
+> Task :app:expandReleaseArtProfileWildcards
+> Task :forja:mergeReleaseGlobalSynthetics FROM-CACHE
+> Task :forja:processReleaseJavaRes
+> Task :app:mergeReleaseJavaResource
+> Task :forja:mergeReleaseJavaResource
+> Task :forja:mergeDexRelease
+> Task :forja:compileReleaseArtProfile
+> Task :forja:packageRelease
+> Task :forja:createReleaseApkListingFileRedirect
+> Task :forja:assembleRelease
+> Task :app:minifyReleaseWithR8
+> Task :app:compileReleaseArtProfile
+> Task :app:shrinkReleaseRes
+> Task :app:convertShrunkResourcesToBinaryRelease
+> Task :app:optimizeReleaseResources
+> Task :app:packageRelease
+> Task :app:createReleaseApkListingFileRedirect
+> Task :app:assembleRelease
+gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/__run-1794393652332.json
+
+BUILD SUCCESSFUL in 2m 14s
+92 actionable tasks: 71 executed, 21 from cache

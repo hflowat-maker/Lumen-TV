@@ -22,10 +22,23 @@ Lecteur Xtream Codes pour Android TV / Google TV, pensé pour la télécommande 
 
 Chaque modification poussée sur `main` recompile l'APK automatiquement (onglet *Actions*). Les mises à jour s'installent par-dessus la version précédente sans perdre vos données.
 
+## Forja TV
+
+Le dépôt compile aussi **Forja TV** (module `forja/`) : le site [forja.ma](https://forja.ma) de la SNRT (séries, films, théâtre marocains, gratuits) en plein écran sur Google TV, piloté à la télécommande.
+
+- **Flèches** : déplacer le pointeur ; en le poussant contre un bord, la page ou la rangée défile
+- **OK** : cliquer · **appui long sur OK** : menu (accueil, recharger, taille de l'affichage, vitesse du pointeur, version mobile/ordinateur)
+- **Retour** : page précédente ou sortie du plein écran ; deux fois pour quitter
+- **Vidéo en plein écran** : ← / → reculer / avancer de 10 s (maintenir pour aller plus vite), OK pause, ↑ / ↓ réafficher le pointeur
+- Touches lecture/pause et avance/retour rapides de la télécommande prises en charge
+
+Installation avec Downloader, comme Lumen TV :
+`https://github.com/hflowat-maker/Lumen-TV/releases/latest/download/forja-tv.apk`
+
 ## Compilation locale
 
 ```
 ./gradlew assembleRelease
 ```
 
-L'APK se trouve dans `app/build/outputs/apk/release/`.
+Les APK se trouvent dans `app/build/outputs/apk/release/` (Lumen TV) et `forja/build/outputs/apk/release/` (Forja TV).

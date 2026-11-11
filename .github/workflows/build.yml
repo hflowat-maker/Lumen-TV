@@ -2,7 +2,7 @@ name: Build APK
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'dev/**']
   workflow_dispatch:
 
 permissions:
@@ -48,30 +48,39 @@ jobs:
           git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" build-log
 
       - name: Prepare APK
-        run: cp app/build/outputs/apk/release/app-release.apk lumen-tv.apk
+        run: |
+          cp app/build/outputs/apk/release/app-release.apk lumen-tv.apk
+          cp forja/build/outputs/apk/release/forja-release.apk forja-tv.apk
 
       - uses: actions/upload-artifact@v4
         with:
           name: lumen-tv-${{ github.run_number }}
-          path: lumen-tv.apk
+          path: |
+            lumen-tv.apk
+            forja-tv.apk
 
+      # Les branches dev/** sont seulement compilées (journal sur build-log) ; seul main publie.
       - name: Publish APK (branch apk)
+        if: github.ref == 'refs/heads/main'
         shell: bash
         run: |
-          mkdir -p /tmp/apk && cp lumen-tv.apk /tmp/apk/
+          mkdir -p /tmp/apk && cp lumen-tv.apk forja-tv.apk /tmp/apk/
           cd /tmp/apk
           git init -q
           git checkout -q -b apk
           git config user.name "github-actions"
           git config user.email "actions@github.com"
-          git add lumen-tv.apk
+          git add lumen-tv.apk forja-tv.apk
           git commit -q -m "APK build ${{ github.run_number }}"
           git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" apk
 
       - name: Release
+        if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: build-${{ github.run_number }}
           name: Lumen TV 1.0.${{ github.run_number }}
-          files: lumen-tv.apk
+          files: |
+            lumen-tv.apk
+            forja-tv.apk
           make_latest: true

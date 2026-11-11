@@ -16,3 +16,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "LumenTV"
 include(":app")
+include(":forja")
